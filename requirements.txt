@@ -1,0 +1,13 @@
+requests
+beautifulsoup4
+yfinance
+sqlalchemy
+psycopg2-binary
+pandas
+numpy
+fastapi
+uvicorn
+jinja2
+weasyprint
+python-telegram-bot
+python-multipart
