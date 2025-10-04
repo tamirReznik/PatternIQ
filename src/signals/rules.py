@@ -20,8 +20,9 @@ class RuleBasedSignals:
 
     def __init__(self):
         self.logger = logging.getLogger("RuleBasedSignals")
-        db_url = os.getenv("PATTERNIQ_DB_URL", "postgresql://admin:secret@localhost:5432/patterniq")
-        self.engine = create_engine(db_url)
+        # Use the database manager instead of hardcoded URL
+        from src.common.db_manager import db_manager
+        self.engine = db_manager.get_engine()
 
     def get_features_for_signal(self, symbol: str, signal_date: date, required_features: List[str]) -> Dict[str, float]:
         """Get required features for a symbol on a specific date"""

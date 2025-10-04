@@ -266,13 +266,80 @@ print(f"Total return: {status['total_return']:.2%}")
 
 ## 🚀 Getting Started
 
-### **System Requirements**
-- PostgreSQL 16+ database
-- Python 3.13+ environment
-- Internet connection for market data
-- Daily execution schedule (recommended: 6:00 AM ET)
+### **Operating Modes**
 
-### **Installation**
+PatternIQ supports three operating modes to fit different deployment scenarios:
+
+#### **1. BATCH Mode (Recommended for Daily Use)**
+- Runs the complete pipeline once and exits
+- Perfect for cron jobs or scheduled tasks
+- Minimal resource usage
+- Ideal for daily trading signal generation
+
+```bash
+# Run once and exit (most common usage)
+python run_patterniq.py batch
+
+# Run once with Telegram notifications
+python run_patterniq.py batch --telegram
+
+# Run once and then start API server
+PATTERNIQ_ALWAYS_ON=false START_API_SERVER=true python run_patterniq.py batch
+```
+
+#### **2. ALWAYS-ON Mode (For Continuous Operation)**
+- Runs continuously with daily scheduled execution
+- Keeps API server running 24/7
+- Automatically runs pipeline every 24 hours
+- Best for production deployments requiring real-time API access
+
+```bash
+# Run continuously with API server
+python run_patterniq.py always-on
+
+# Run continuously on custom port
+python run_patterniq.py always-on --port 9000
+```
+
+#### **3. API-ONLY Mode (For Development/Testing)**
+- Starts only the API server without running pipeline
+- Useful for testing API endpoints with existing data
+- No data processing or signal generation
+
+```bash
+# Start API server only
+python run_patterniq.py api-only
+
+# Start API on custom port
+python run_patterniq.py api-only --port 9000
+```
+
+### **Environment Configuration**
+
+Create a `.env` file or set environment variables:
+
+```bash
+# BATCH MODE (run once and exit)
+export PATTERNIQ_ALWAYS_ON=false
+export START_API_SERVER=false
+export GENERATE_REPORTS=true
+export SEND_TELEGRAM_ALERTS=true
+export TELEGRAM_BOT_TOKEN='your_bot_token'
+export TELEGRAM_CHAT_IDS='your_chat_id'
+
+# ALWAYS-ON MODE (continuous operation) 
+export PATTERNIQ_ALWAYS_ON=true
+export START_API_SERVER=true
+export API_HOST=0.0.0.0
+export API_PORT=8000
+
+# DATABASE
+export PATTERNIQ_DB_URL="postgresql://username:password@localhost:5432/patterniq"
+```
+
+See `.env.example` for complete configuration options.
+
+### **System Requirements**
 ```bash
 # Clone repository
 git clone <repository-url>
@@ -323,21 +390,6 @@ python -m src.trading.simulator
 
 # 8. Start API server for external access
 uvicorn src.api.server:app --host 0.0.0.0 --port 8000
-```
-
-### **Environment Configuration**
-Create a `.env` file or set environment variables:
-```bash
-# Database connection
-export PATTERNIQ_DB_URL="postgresql://username:password@localhost:5432/patterniq"
-
-# Telegram bot (optional)
-export TELEGRAM_BOT_TOKEN="your_bot_token_here"
-export TELEGRAM_CHAT_IDS="123456789,987654321"
-
-# API configuration
-export API_HOST="0.0.0.0"
-export API_PORT="8000"
 ```
 
 ---

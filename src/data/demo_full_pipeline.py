@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, date
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 # Import our modules
 from src.providers.sp500_provider import SP500Provider
@@ -13,10 +14,11 @@ from src.data.models import Instrument, Bars1d, Base
 
 def setup_database():
     """Setup database connection and create tables"""
-    db_url = os.getenv("PATTERNIQ_DB_URL", "postgresql://admin:secret@localhost:5432/patterniq")
-    print(f"Connecting to database: {db_url}")
-    
-    engine = create_engine(db_url)
+    # Use the database manager instead of hardcoded URL
+    from src.common.db_manager import db_manager
+    engine = db_manager.get_engine()
+    print(f"Connecting to database: {engine.url}")
+
     Base.metadata.create_all(bind=engine)
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -53,23 +55,34 @@ def demo_full_data_ingestion():
             print(f"Processing {i}/{len(test_symbols)}: {symbol}")
             
             # Fetch bars
-            bars = provider.get_bars(symbol, "1d", "2024-01-01", "2024-01-10")
+            # Extend historical window to ensure enough data for ret_20/60/120 features
+            bars = provider.get_bars(symbol, "1d", "2023-01-01", "2024-01-10")
             if bars:
                 # Save instrument
                 instrument = Instrument(
                     symbol=symbol,
                     name=f"{symbol} Corporation",
                     is_active=True,
-                    first_seen=datetime.now().date(),
+                    first_seen=date.today(),
                     sector="Technology" if symbol in ['AAPL', 'MSFT', 'GOOGL'] else "Unknown"
                 )
-                db.merge(instrument)
-                
+                try:
+                    db.add(instrument)
+                    db.flush()  # ensure insert
+                except IntegrityError:
+                    db.rollback()  # already exists, ignore
+
                 # Save bars
                 for bar in bars:
+                    # Convert timestamp to proper format for SQLite compatibility
+                    timestamp = bar["t"]
+                    if isinstance(timestamp, str):
+                        # Parse string timestamp and convert to datetime
+                        timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+
                     bar_record = Bars1d(
                         symbol=symbol,
-                        t=bar["t"],
+                        t=timestamp,
                         o=bar["o"],
                         h=bar["h"],
                         l=bar["l"],

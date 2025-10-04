@@ -7,8 +7,9 @@ from typing import Optional, Dict, List
 import os
 import json
 from sqlalchemy import create_engine, text
+from pathlib import Path
 
-from src.report.generator import ReportGenerator
+from src.report.generator import generate_daily_report
 
 app = FastAPI(
     title="PatternIQ API",
@@ -17,7 +18,6 @@ app = FastAPI(
 )
 
 # Initialize components
-report_generator = ReportGenerator()
 db_url = os.getenv("PATTERNIQ_DB_URL", "postgresql://admin:secret@localhost:5432/patterniq")
 engine = create_engine(db_url)
 
@@ -40,57 +40,97 @@ async def root():
 @app.get("/reports/latest")
 async def get_latest_report(format: str = Query("json", regex="^(json|html|pdf)$")):
     """Get the latest daily report in specified format"""
-
     try:
-        # Get latest report date
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT MAX(d) FROM signals_daily"))
-            latest_date = result.fetchone()[0]
+        # Find latest report file in reports directory
+        reports_dir = Path("reports")
+        if not reports_dir.exists():
+            raise HTTPException(status_code=404, detail="Reports directory not found")
 
-        if not latest_date:
+        # Find the latest report file based on filename pattern
+        json_reports = list(reports_dir.glob("patterniq_report_*.json"))
+        if not json_reports:
             raise HTTPException(status_code=404, detail="No reports available")
 
-        return await get_daily_report(latest_date, format)
+        # Get the latest report based on filename date
+        latest_report = max(json_reports, key=lambda p: p.name)
+        date_str = latest_report.stem.replace("patterniq_report_", "")
 
+        # Convert to date object
+        report_date = datetime.strptime(date_str, "%Y%m%d").date()
+
+        return await get_daily_report(report_date, format)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving latest report: {str(e)}")
 
 @app.get("/reports/daily/{report_date}")
 async def get_daily_report(report_date: date, format: str = Query("json", regex="^(json|html|pdf)$")):
     """Get daily report for specific date"""
-
     try:
+        date_str = report_date.strftime("%Y%m%d")
+        reports_dir = Path("reports")
+
         if format == "json":
-            # Generate fresh JSON data
-            json_data = report_generator.generate_json_report(report_date)
-            return JSONResponse(content=json_data)
+            # Look for existing JSON report
+            json_file = reports_dir / f"patterniq_report_{date_str}.json"
+            if json_file.exists():
+                with open(json_file, "r") as f:
+                    return json.load(f)
+            else:
+                # Generate fresh report
+                result = generate_daily_report(report_date.strftime("%Y-%m-%d"))
+                if result and result.get("status") == "success":
+                    # Find and return the newly generated report
+                    if json_file.exists():
+                        with open(json_file, "r") as f:
+                            return json.load(f)
+
+                raise HTTPException(status_code=404, detail=f"Report for {report_date} not found")
 
         elif format == "html":
-            # Check if HTML file exists, generate if not
-            filename = f"patterniq_report_{report_date.strftime('%Y%m%d')}.html"
-            filepath = os.path.join(report_generator.reports_dir, filename)
+            # Check for HTML file
+            html_file = reports_dir / f"patterniq_report_{date_str}.html"
+            if html_file.exists():
+                return FileResponse(html_file, media_type="text/html",
+                                  filename=f"patterniq_report_{date_str}.html")
+            else:
+                # Generate fresh report
+                result = generate_daily_report(report_date.strftime("%Y-%m-%d"))
+                if result and result.get("status") == "success":
+                    # Return the newly generated HTML report
+                    if html_file.exists():
+                        return FileResponse(html_file, media_type="text/html",
+                                          filename=f"patterniq_report_{date_str}.html")
 
-            if not os.path.exists(filepath):
-                json_data = report_generator.generate_json_report(report_date)
-                html_content = report_generator.generate_html_report(json_data)
-                report_generator.save_html_report(html_content, report_date)
-
-            return FileResponse(filepath, media_type="text/html", filename=filename)
+                raise HTTPException(status_code=404, detail=f"HTML report for {report_date} not found")
 
         elif format == "pdf":
-            # Check if PDF file exists, generate if not
-            filename = f"patterniq_report_{report_date.strftime('%Y%m%d')}.pdf"
-            filepath = os.path.join(report_generator.reports_dir, filename)
+            # Check for PDF file
+            pdf_file = reports_dir / f"patterniq_report_{date_str}.pdf"
+            if pdf_file.exists():
+                return FileResponse(pdf_file, media_type="application/pdf",
+                                  filename=f"patterniq_report_{date_str}.pdf")
+            else:
+                raise HTTPException(status_code=503,
+                                   detail="PDF generation not implemented in this version")
 
-            if not os.path.exists(filepath):
-                json_data = report_generator.generate_json_report(report_date)
-                html_content = report_generator.generate_html_report(json_data)
-                pdf_path = report_generator.generate_pdf_report(html_content, report_date)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
 
-                if not pdf_path:
-                    raise HTTPException(status_code=503, detail="PDF generation not available")
+@app.post("/reports/generate/{report_date}")
+async def generate_report(report_date: date):
+    """Generate fresh report for specified date"""
+    try:
+        result = generate_daily_report(report_date.strftime("%Y-%m-%d"))
 
-            return FileResponse(filepath, media_type="application/pdf", filename=filename)
+        if result and result.get("status") == "success":
+            return {
+                "status": "success",
+                "report_date": report_date.isoformat(),
+                "generated_files": result.get("reports_generated", [])
+            }
+        else:
+            raise HTTPException(status_code=500,
+                               detail="Report generation failed")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
@@ -283,27 +323,6 @@ async def get_trading_performance(days: int = Query(30, ge=1, le=365)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving performance: {str(e)}")
-
-@app.post("/reports/generate/{report_date}")
-async def generate_report(report_date: date):
-    """Generate fresh report for specified date"""
-
-    try:
-        report_paths = report_generator.generate_all_reports(report_date)
-
-        return {
-            "status": "success",
-            "report_date": report_date.isoformat(),
-            "generated_files": {
-                "json": report_paths["json"],
-                "html": report_paths["html"],
-                "pdf": report_paths["pdf"]
-            },
-            "report_id": report_paths["report_id"]
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
 
 def _get_recommendation(score: float) -> str:
     """Convert signal score to recommendation"""

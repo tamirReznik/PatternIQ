@@ -17,8 +17,9 @@ class MomentumFeatures:
 
     def __init__(self):
         self.logger = logging.getLogger("MomentumFeatures")
-        db_url = os.getenv("PATTERNIQ_DB_URL", "postgresql://admin:secret@localhost:5432/patterniq")
-        self.engine = create_engine(db_url)
+        # Use the database manager instead of hardcoded URL
+        from src.common.db_manager import db_manager
+        self.engine = db_manager.get_engine()
 
     def calculate_returns(self, symbol: str, periods: List[int] = [20, 60, 120]) -> pd.DataFrame:
         """Calculate momentum returns for specified periods"""
@@ -120,12 +121,13 @@ class MomentumFeatures:
             self.logger.warning(f"No features to save for {symbol}")
             return
 
+        self.logger.info(f"Attempting to save {len(features_df)} rows and {len(features_df.columns)} columns of {feature_type} features for {symbol}")
+        inserted = 0
         with self.engine.connect() as conn:
             for date_idx, row in features_df.iterrows():
                 for feature_name, value in row.items():
                     if pd.notna(value):  # Only save non-NaN values
                         full_feature_name = f"{feature_type}_{feature_name}"
-
                         conn.execute(
                             text("""
                             INSERT INTO features_daily (symbol, d, feature_name, value)
@@ -140,11 +142,9 @@ class MomentumFeatures:
                                 "value": float(value)
                             }
                         )
-
+                        inserted += 1
             conn.commit()
-
-        feature_count = len(features_df) * len(features_df.columns)
-        self.logger.info(f"Saved {feature_count} {feature_type} features for {symbol}")
+        self.logger.info(f"Saved {inserted} individual {feature_type} feature values for {symbol}")
 
     def compute_all_momentum_features(self, symbol: str):
         """Compute and save all momentum features for a symbol"""
