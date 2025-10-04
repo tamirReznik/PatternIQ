@@ -3,9 +3,10 @@
 import logging
 import asyncio
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 import json
+from pathlib import Path
 
 try:
     from telegram import Bot
@@ -14,8 +15,6 @@ try:
 except ImportError:
     TELEGRAM_AVAILABLE = False
     logging.warning("python-telegram-bot not available. Install with: pip install python-telegram-bot")
-
-from src.report.generator import ReportGenerator
 
 class PatternIQBot:
     """
@@ -39,7 +38,6 @@ class PatternIQBot:
             return
 
         self.bot = Bot(token=self.bot_token)
-        self.report_generator = ReportGenerator()
 
         # Default chat IDs (can be configured)
         self.chat_ids = self._load_chat_ids()
@@ -98,64 +96,105 @@ class PatternIQBot:
     def format_telegram_message(self, report_data: dict) -> str:
         """Format report data for Telegram message"""
 
-        meta = report_data["report_metadata"]
-        summary = report_data["executive_summary"]
-        signals = report_data["trading_recommendations"]
-        market = report_data["market_analysis"]
-        alerts = report_data["risk_alerts"]
+        # Handle the actual report structure from PatternIQ
+        date = report_data.get("date", "Unknown")
+        market_overview = report_data.get("market_overview", {})
+        top_long = report_data.get("top_long", [])
+        top_short = report_data.get("top_short", [])
 
         message = f"🤖 *PatternIQ Daily Report*\n"
-        message += f"📅 {meta['report_date']}\n\n"
+        message += f"📅 {date}\n\n"
 
-        # Executive Summary
-        message += f"📊 *Market Overview*\n"
-        message += f"• Regime: {market['market_regime']}\n"
-        message += f"• Signal Strength: {summary['signal_strength']}%\n"
-        message += f"• Total Recommendations: {summary['total_recommendations']}\n"
-        message += f"• High Conviction: {summary['strong_conviction_trades']}\n\n"
+        # Add Trading Bot Performance Section
+        bot_performance = self._get_bot_performance()
+        if bot_performance:
+            message += f"💼 *Trading Bot Performance*\n"
+            message += f"• Portfolio Value: ${bot_performance['current_value']:,.0f}\n"
+            message += f"• Total Return: {bot_performance['total_return']}\n"
+            message += f"• Cash Balance: ${bot_performance['cash_balance']:,.0f}\n"
+            message += f"• Active Positions: {bot_performance['positions_count']}\n"
+            message += f"• Total Trades: {bot_performance['total_trades']}\n"
 
-        # Risk Alerts
-        if alerts and alerts[0] != "No significant risk alerts":
-            message += f"⚠️ *Risk Alerts*\n"
-            for alert in alerts[:3]:  # Limit to top 3 alerts
-                message += f"• {alert}\n"
+            # Add recent trades if any
+            if bot_performance.get('recent_trades'):
+                message += f"• Recent Trades: {len(bot_performance['recent_trades'])}\n"
+                for trade in bot_performance['recent_trades'][:2]:  # Show last 2 trades
+                    pnl_emoji = "📈" if trade.get('pnl', 0) >= 0 else "📉"
+                    message += f"  {pnl_emoji} {trade.get('action', 'N/A')} {trade.get('symbol', 'N/A')} @ ${trade.get('price', 0):.2f}\n"
+
             message += "\n"
 
+        # Market Overview
+        message += f"📊 *Market Overview*\n"
+        message += f"• Regime: {market_overview.get('regime', 'N/A')}\n"
+        message += f"• Signal Strength: {market_overview.get('signal_strength', 0)}%\n"
+        message += f"• Total Recommendations: {market_overview.get('total_recommendations', 0)}\n"
+        message += f"• High Conviction: {market_overview.get('high_conviction', 0)}\n\n"
+
         # Long Recommendations
-        long_candidates = signals["long_candidates"][:5]  # Top 5
-        if long_candidates:
-            message += f"📈 *Top Long Picks ({len(long_candidates)})*\n"
-            for stock in long_candidates:
-                score_emoji = "🔥" if stock["signal_score"] > 0.7 else "📈" if stock["signal_score"] > 0.5 else "↗️"
-                message += f"{score_emoji} *{stock['symbol']}* ({stock['sector']}) - {stock['recommendation']}\n"
-                message += f"   Score: {stock['signal_score']:.3f} | Size: {stock['position_size']} | ${stock['current_price']:.2f}\n"
+        if top_long:
+            message += f"📈 *Top Long Picks ({len(top_long)})*\n"
+            for stock in top_long[:3]:  # Top 3 to save space
+                score_emoji = "🔥" if stock.get("score", 0) > 0.7 else "📈" if stock.get("score", 0) > 0.5 else "↗️"
+                message += f"{score_emoji} *{stock.get('symbol', 'N/A')}* ({stock.get('sector', 'N/A')}) - {stock.get('signal', 'N/A')}\n"
+                message += f"   Score: {stock.get('score', 0):.3f} | Size: {stock.get('position_size', 0)}% | ${stock.get('price', 0):.2f}\n"
             message += "\n"
 
         # Short Recommendations
-        short_candidates = signals["short_candidates"][:5]  # Top 5
-        if short_candidates:
-            message += f"📉 *Top Short Picks ({len(short_candidates)})*\n"
-            for stock in short_candidates:
-                score_emoji = "🔥" if stock["signal_score"] < -0.7 else "📉" if stock["signal_score"] < -0.5 else "↘️"
-                message += f"{score_emoji} *{stock['symbol']}* ({stock['sector']}) - {stock['recommendation']}\n"
-                message += f"   Score: {stock['signal_score']:.3f} | Size: {stock['position_size']} | ${stock['current_price']:.2f}\n"
-            message += "\n"
-
-        # Sector Analysis (top 3)
-        sectors = sorted(market["sector_analysis"], key=lambda x: abs(x["avg_signal"]), reverse=True)[:3]
-        if sectors:
-            message += f"🏢 *Sector Highlights*\n"
-            for sector in sectors:
-                sentiment_emoji = "🟢" if sector["sentiment"] == "Bullish" else "🔴" if sector["sentiment"] == "Bearish" else "🟡"
-                message += f"{sentiment_emoji} {sector['sector']}: {sector['sentiment']} ({sector['avg_signal']:+.3f})\n"
+        if top_short:
+            message += f"📉 *Top Short Picks ({len(top_short)})*\n"
+            for stock in top_short[:3]:  # Top 3 to save space
+                score_emoji = "🔥" if stock.get("score", 0) < -0.7 else "📉" if stock.get("score", 0) < -0.5 else "↘️"
+                message += f"{score_emoji} *{stock.get('symbol', 'N/A')}* ({stock.get('sector', 'N/A')}) - {stock.get('signal', 'SELL')}\n"
+                message += f"   Score: {stock.get('score', 0):.3f} | Size: {stock.get('position_size', 0)}% | ${stock.get('price', 0):.2f}\n"
             message += "\n"
 
         # Footer
         message += f"⏰ Generated: {datetime.now().strftime('%H:%M ET')}\n"
-        message += f"🔗 Full report: `/report {meta['report_date']}`\n\n"
+        message += f"🔗 Full report available in dashboard\n\n"
         message += "_Trading involves substantial risk. Past performance doesn't guarantee future results._"
 
         return message
+
+    def _get_bot_performance(self) -> dict:
+        """Get trading bot performance data"""
+        try:
+            portfolio_file = Path("trading_data/portfolio_state.json")
+            if not portfolio_file.exists():
+                return None
+
+            with open(portfolio_file, 'r') as f:
+                data = json.load(f)
+
+            # Calculate current portfolio value
+            positions_value = 0
+            for symbol, pos_data in data.get('positions', {}).items():
+                shares = pos_data.get('shares', 0)
+                entry_price = pos_data.get('entry_price', 0)
+                positions_value += shares * entry_price
+
+            current_value = data.get('cash_balance', 0) + positions_value
+            initial_capital = data.get('initial_capital', 100000)
+            total_return_num = (current_value - initial_capital) / initial_capital * 100
+
+            # Get recent trades (last 5)
+            recent_trades = data.get('trade_history', [])[-5:] if data.get('trade_history') else []
+
+            return {
+                "current_value": current_value,
+                "total_return": f"{total_return_num:+.2f}%",
+                "total_return_num": total_return_num,
+                "cash_balance": data.get('cash_balance', 0),
+                "positions_count": len(data.get('positions', {})),
+                "total_trades": len(data.get('trade_history', [])),
+                "recent_trades": recent_trades,
+                "paper_trading": data.get('paper_trading', True),
+                "start_date": data.get('start_date', 'Unknown')
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error loading bot performance: {e}")
+            return None
 
     async def send_daily_report(self, report_date: Optional[date] = None) -> bool:
         """Send daily report to all registered chat IDs"""
@@ -169,12 +208,19 @@ class PatternIQBot:
             return False
 
         if not report_date:
-            report_date = date.today()
+            report_date = date.today() - timedelta(days=1)  # Use yesterday's date
 
         try:
-            # Generate report data
-            self.logger.info(f"Generating Telegram report for {report_date}")
-            report_data = self.report_generator.generate_json_report(report_date)
+            # Load report data directly from file instead of using ReportGenerator class
+            reports_dir = Path("reports")
+            report_file = reports_dir / f"patterniq_report_{report_date.strftime('%Y%m%d')}.json"
+
+            if not report_file.exists():
+                self.logger.error(f"Report file not found: {report_file}")
+                return False
+
+            with open(report_file, 'r') as f:
+                report_data = json.load(f)
 
             # Format message
             message = self.format_telegram_message(report_data)
