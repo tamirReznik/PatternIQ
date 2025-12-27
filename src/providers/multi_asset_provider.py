@@ -96,6 +96,7 @@ class MultiAssetProvider(DataSource):
 
     def _acquire_rate_limit(self):
         """Acquire rate limit token (thread-safe)"""
+        sleep_time = 0
         with self.rate_limiter_lock:
             now = time.time()
             elapsed = now - self.rate_limiter['last']
@@ -109,11 +110,10 @@ class MultiAssetProvider(DataSource):
                 self.rate_limiter['last'] = now
             else:
                 sleep_time = (1 - self.rate_limiter['tokens']) * (self.rate_limiter['per'] / self.rate_limiter['rate'])
-                # Release lock before sleeping to allow other threads to proceed
                 self.rate_limiter['last'] = time.time()
         
         # Sleep outside the lock to avoid blocking other threads
-        if self.rate_limiter['tokens'] < 1:
+        if sleep_time > 0:
             time.sleep(sleep_time)
             with self.rate_limiter_lock:
                 self.rate_limiter['tokens'] = 0

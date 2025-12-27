@@ -21,7 +21,9 @@ except ImportError:
     # Fallback to old location for backward compatibility
     from src.common.config import config
 from src.common.db_manager import db_manager
+from sqlalchemy import text
 from src.data.ingestion.pipeline import run_data_ingestion_pipeline
+from src.data.ingestion.incremental import incremental_backfill, get_symbols_needing_update
 from src.features.momentum import calculate_momentum_features
 from src.report.generator import generate_daily_report
 from src.signals.blend import blend_signals_ic_weighted
@@ -50,9 +52,9 @@ class PatternIQOrchestrator:
         try:
             logger.info("🚀 Starting PatternIQ daily pipeline...")
 
-            # 1. Data ingestion
-            logger.info("📊 Step 1/7: Ingesting market data...")
-            await asyncio.to_thread(run_data_ingestion_pipeline)
+            # 1. Data ingestion (incremental update for daily runs)
+            logger.info("📊 Step 1/7: Updating market data...")
+            await self.run_incremental_data_update()
 
             # 2. Feature calculation
             logger.info("🔧 Step 2/7: Calculating features...")

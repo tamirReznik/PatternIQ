@@ -113,12 +113,15 @@ Examples:
   python run_patterniq.py batch --telegram        # Run once with Telegram
   python run_patterniq.py always-on --port 9000   # Always-on mode on port 9000
   python run_patterniq.py api-only                # Start API server only
+  python run_patterniq.py ingest --days 30        # Fetch last 30 days of data
+  python run_patterniq.py ingest --start-date 2024-01-01 --end-date 2024-12-31  # Custom date range
+  python run_patterniq.py ingest --days 90 --workers 20  # 90 days with 20 parallel workers
         """
     )
 
     parser.add_argument(
         "mode",
-        choices=["batch", "always-on", "api-only"],
+        choices=["batch", "always-on", "api-only", "ingest"],
         help="Operating mode"
     )
 
@@ -161,6 +164,32 @@ Examples:
         help="Disable automatic database migration"
     )
 
+    # Data ingestion arguments
+    parser.add_argument(
+        "--days",
+        type=int,
+        help="Number of days of historical data to fetch (default: 30)"
+    )
+    
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        help="Start date for data ingestion (YYYY-MM-DD format)"
+    )
+    
+    parser.add_argument(
+        "--end-date",
+        type=str,
+        help="End date for data ingestion (YYYY-MM-DD format, default: today)"
+    )
+    
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=10,
+        help="Number of parallel workers for data ingestion (default: 10)"
+    )
+
     args = parser.parse_args()
 
     # Setup environment
@@ -183,6 +212,26 @@ Examples:
         import uvicorn
         from src.api.server import app
         uvicorn.run(app, host="127.0.0.1", port=args.port)
+    elif args.mode == "ingest":
+        # Data ingestion mode
+        from src.data.ingestion.pipeline import run_data_ingestion_pipeline
+        from datetime import date, timedelta
+        
+        # Determine date range
+        if args.days:
+            end_date = date.today()
+            start_date = end_date - timedelta(days=args.days)
+            start_date_str = start_date.strftime("%Y-%m-%d")
+            end_date_str = end_date.strftime("%Y-%m-%d")
+        else:
+            start_date_str = args.start_date
+            end_date_str = args.end_date
+        
+        run_data_ingestion_pipeline(
+            start_date=start_date_str,
+            end_date=end_date_str,
+            max_workers=args.workers
+        )
     else:
         asyncio.run(main())
 
