@@ -154,9 +154,9 @@ class PriceAdjuster:
         self.db.close()
 
 
-# Demo function to test the adjustment logic
-def demo_adjustment_logic():
-    """Demo: Test stock split and dividend adjustment logic"""
+# Test function for adjustment logic
+def test_adjustment_logic():
+    """Test stock split and dividend adjustment logic"""
     print("🔧 PatternIQ Price Adjustment Demo")
     print("=" * 50)
 

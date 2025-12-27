@@ -163,8 +163,8 @@ class MomentumFeatures:
         self.logger.info(f"Completed momentum features for {symbol}")
 
 
-def demo_momentum_features():
-    """Demo: Calculate and save momentum features"""
+def calculate_momentum_features():
+    """Calculate and save momentum features for all symbols"""
     print("📈 PatternIQ Momentum Features Demo")
     print("=" * 50)
 

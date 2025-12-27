@@ -235,7 +235,7 @@ class AssetUniverse:
         return combined_df
 
 
-def demo_asset_universe():
+def test_asset_universe():
     """Demonstrate the expanded asset universe"""
     print("🌍 PATTERNIQ EXPANDED ASSET UNIVERSE")
     print("=" * 70)

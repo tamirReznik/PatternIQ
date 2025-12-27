@@ -318,8 +318,8 @@ class BacktestSimulator:
             conn.commit()
 
 
-def demo_backtesting():
-    """Demo: Run backtest on our signal data"""
+def run_backtest_demo():
+    """Run a backtest demo on signal data (for testing/demo purposes)"""
     print("📊 PatternIQ Backtesting Demo")
     print("=" * 50)
 

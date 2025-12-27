@@ -357,8 +357,8 @@ class RuleBasedSignals:
         }
 
 
-def demo_signal_generation():
-    """Demo: Generate rule-based signals for our test data"""
+def generate_signals():
+    """Generate rule-based trading signals for all available symbols"""
     print("📊 PatternIQ Signal Generation Demo")
     print("=" * 50)
 

@@ -345,7 +345,7 @@ def setup_telegram_bot():
         return None
 
 
-async def demo_telegram_bot():
+async def test_telegram_bot():
     """Demo: Send test Telegram report"""
 
     print("📱 PatternIQ Telegram Bot Demo")

@@ -1,4 +1,4 @@
-# src/data/demo_full_pipeline.py - Comprehensive pipeline demo
+# src/data/ingestion/pipeline.py - Data ingestion pipeline
 
 import logging
 import os

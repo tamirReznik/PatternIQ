@@ -15,11 +15,11 @@ except ImportError:
     # Fallback to old location for backward compatibility
     from src.common.config import config
 from src.common.db_manager import db_manager
-from src.data.demo_full_pipeline import demo_full_data_ingestion
-from src.features.momentum import demo_momentum_features
+from src.data.ingestion.pipeline import run_data_ingestion_pipeline
+from src.features.momentum import calculate_momentum_features
 from src.report.generator import generate_daily_report
 from src.signals.blend import blend_signals_ic_weighted
-from src.signals.rules import demo_signal_generation
+from src.signals.rules import generate_signals
 
 # Setup logging
 logging.basicConfig(
@@ -43,15 +43,15 @@ class PatternIQOrchestrator:
 
             # 1. Data ingestion
             logger.info("📊 Step 1/7: Ingesting market data...")
-            await asyncio.to_thread(demo_full_data_ingestion)
+            await asyncio.to_thread(run_data_ingestion_pipeline)
 
             # 2. Feature calculation
             logger.info("🔧 Step 2/7: Calculating features...")
-            await asyncio.to_thread(demo_momentum_features)
+            await asyncio.to_thread(calculate_momentum_features)
 
             # 3. Signal generation
             logger.info("📡 Step 3/7: Generating signals...")
-            await asyncio.to_thread(demo_signal_generation)
+            await asyncio.to_thread(generate_signals)
 
             # 4. Signal blending
             logger.info("🎯 Step 4/7: Blending signals...")
