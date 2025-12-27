@@ -31,16 +31,17 @@ class SignalBlender:
         
         with self.engine.connect() as conn:
             if is_sqlite:
-                # SQLite: Use IN clause with tuple
-                placeholders = ','.join(['?' for _ in symbols])
+                # SQLite: Use IN clause with named parameters
+                symbol_placeholders = ', '.join([f":s{i}" for i in range(len(symbols))])
                 query = f"""
                     SELECT symbol, t, adj_c, 
-                           LEAD(adj_c, ?) OVER (PARTITION BY symbol ORDER BY t) as future_price
+                           LEAD(adj_c, :horizon) OVER (PARTITION BY symbol ORDER BY t) as future_price
                     FROM bars_1d
-                    WHERE symbol IN ({placeholders})
-                    AND t BETWEEN ? AND ?
+                    WHERE symbol IN ({symbol_placeholders})
+                    AND DATE(t) BETWEEN DATE(:start_date) AND DATE(:end_date)
                 """
-                params = [horizon_days] + symbols + [start_date, end_date]
+                params = {'horizon': horizon_days, 'start_date': start_date, 'end_date': end_date}
+                params.update({f"s{i}": s for i, s in enumerate(symbols)})
                 result = conn.execute(text(query), params)
             else:
                 # PostgreSQL: Use ANY with array
@@ -193,17 +194,18 @@ def blend_signals_ic_weighted(date_str: str = None):
             
             with blender.engine.connect() as conn:
                 if is_sqlite:
-                    # SQLite: Use IN clause with tuple
-                    placeholders = ','.join(['?' for _ in symbols_limited])
+                    # SQLite: Use IN clause with named parameters
+                    symbol_placeholders = ', '.join([f":s{i}" for i in range(len(symbols_limited))])
                     query = f"""
                         SELECT symbol, d, signal_name, score
                         FROM signals_daily
-                        WHERE d >= ? AND d <= ?
+                        WHERE d >= :start_date AND d <= :eval_date
                         AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
-                        AND symbol IN ({placeholders})
+                        AND symbol IN ({symbol_placeholders})
                         ORDER BY d, symbol
                     """
-                    params = [lookback_start, eval_date] + symbols_limited
+                    params = {"start_date": lookback_start, "eval_date": eval_date}
+                    params.update({f"s{i}": s for i, s in enumerate(symbols_limited)})
                     result = conn.execute(text(query), params)
                 else:
                     # PostgreSQL: Use ANY with array

@@ -11,3 +11,7 @@ jinja2
 weasyprint
 python-telegram-bot
 python-multipart
+pytz
+pytest
+pytest-mock
+pytest-cov

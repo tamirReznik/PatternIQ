@@ -109,7 +109,12 @@ def _fetch_report_data(engine, report_date: date, logger) -> Dict:
         # Get instrument metadata (sector, name)
         symbols = [row[0] for row in combined_signals]
         if not symbols:
-            logger.warning("No signals found for report date")
+            logger.warning(f"No signals found for report date {report_date}. This may indicate:")
+            logger.warning("  1. Signals have not been generated for this date yet")
+            logger.warning("  2. Data ingestion may be incomplete")
+            logger.warning("  3. Feature calculation or signal generation may need to be run")
+            logger.warning("Falling back to sample data for demonstration purposes only.")
+            logger.warning("To generate real reports, run: python run_patterniq.py batch")
             return _generate_sample_data(report_date)
         
         placeholders = ','.join([f"'{s}'" for s in symbols])
@@ -173,16 +178,16 @@ def _fetch_report_data(engine, report_date: date, logger) -> Dict:
         elif score < -0.3:
             top_short_short[time_horizon].append(signal_entry)
     
-    # Sort and limit each horizon
+    # Sort and limit each horizon (increased limits for better diversity)
     for horizon in ["short", "mid", "long"]:
         top_long_short[horizon].sort(key=lambda x: x["score"], reverse=True)
-        top_long_short[horizon] = top_long_short[horizon][:10]
+        top_long_short[horizon] = top_long_short[horizon][:20]  # Increased from 10 to 20
         top_short_short[horizon].sort(key=lambda x: x["score"])
-        top_short_short[horizon] = top_short_short[horizon][:5]
+        top_short_short[horizon] = top_short_short[horizon][:10]  # Increased from 5 to 10
     
-    # Flatten for backward compatibility
-    top_long = (top_long_short["short"] + top_long_short["mid"] + top_long_short["long"])[:10]
-    top_short = (top_short_short["short"] + top_short_short["mid"] + top_short_short["long"])[:5]
+    # Flatten for backward compatibility (increased total limit)
+    top_long = (top_long_short["short"] + top_long_short["mid"] + top_long_short["long"])[:30]  # Increased from 10 to 30
+    top_short = (top_short_short["short"] + top_short_short["mid"] + top_short_short["long"])[:15]  # Increased from 5 to 15
     
     # Calculate sector scores
     sector_scores = _calculate_sector_scores(top_long + top_short)

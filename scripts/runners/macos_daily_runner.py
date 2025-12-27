@@ -8,12 +8,13 @@ import os
 import sys
 import asyncio
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from pathlib import Path
+import pytz
 
-# Add src to path (go up from scripts/runners/ to project root)
+# Add project root to path (go up from scripts/runners/ to project root)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Setup logging
 logging.basicConfig(
@@ -33,12 +34,54 @@ class MacOSBatchRunner:
         self.run_date = date.today()
         # Get project root (go up from scripts/runners/ to project root)
         self.project_dir = Path(__file__).parent.parent.parent
+        self.et_timezone = pytz.timezone('US/Eastern')
+    
+    def is_market_hours(self) -> bool:
+        """Check if current time is during market hours (9:30 AM - 4:00 PM ET)"""
+        et_now = datetime.now(self.et_timezone)
+        market_open = et_now.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = et_now.replace(hour=16, minute=0, second=0, microsecond=0)
+        
+        # Check if it's a weekday (Monday=0, Sunday=6)
+        is_weekday = et_now.weekday() < 5
+        
+        return is_weekday and market_open <= et_now <= market_close
+    
+    def get_optimal_run_time(self) -> datetime:
+        """Get optimal time to run (4:30 PM ET after market close)"""
+        et_now = datetime.now(self.et_timezone)
+        today_4_30_pm = et_now.replace(hour=16, minute=30, second=0, microsecond=0)
+        
+        # If it's before 4:30 PM today, use today
+        # If it's after 4:30 PM, use tomorrow
+        if et_now < today_4_30_pm:
+            return today_4_30_pm
+        else:
+            return today_4_30_pm + timedelta(days=1)
+    
+    def should_wait_for_market_close(self) -> bool:
+        """Determine if we should wait for market close before running"""
+        if self.is_market_hours():
+            logger.warning("⚠️  Running during market hours - data may not be complete")
+            logger.info("💡 Consider scheduling runs after 4:30 PM ET for best results")
+            return False  # Don't wait, but warn
+        return False  # Not during market hours, proceed
 
     async def run_daily_batch(self):
         """Run complete daily batch with static dashboard generation"""
         logger.info("🚀 Starting PatternIQ Daily Batch (macOS)")
         logger.info(f"📅 Run Date: {self.run_date}")
         logger.info(f"📁 Project Directory: {self.project_dir}")
+        
+        # Check market hours and provide guidance
+        et_now = datetime.now(self.et_timezone)
+        logger.info(f"🕐 Current Time (ET): {et_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
+        if self.is_market_hours():
+            logger.warning("⚠️  Running during market hours - EOD data may not be complete")
+            logger.info("💡 Optimal run time: 4:30 PM ET (30 min after market close)")
+        else:
+            logger.info("✅ Running outside market hours - optimal for EOD data")
 
         try:
             # Step 1: Set environment for batch mode
@@ -80,7 +123,7 @@ class MacOSBatchRunner:
         }
 
         # Load environment variables from .env file if it exists
-        env_file = Path('.env')
+        env_file = self.project_dir / '.env'
         if env_file.exists():
             logger.info("📁 Loading environment variables from .env file...")
             with open(env_file, 'r') as f:
@@ -121,6 +164,10 @@ class MacOSBatchRunner:
     def generate_static_dashboard(self):
         """Generate static HTML dashboard"""
         try:
+            # Add dashboard scripts to path
+            dashboard_scripts = self.project_dir / "scripts" / "dashboard"
+            if str(dashboard_scripts) not in sys.path:
+                sys.path.insert(0, str(dashboard_scripts))
             from static_dashboard_generator import StaticReportGenerator
             generator = StaticReportGenerator()
             dashboard_file = generator.generate_static_dashboard()

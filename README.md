@@ -141,28 +141,52 @@ Based on backtesting with sophisticated risk management:
 
 ## 🌍 Multi-Asset Trading Capabilities
 
-### **Expanded Universe: Stocks + Indexes + Crypto**
+### **Expanded Universe: 527 Symbols (Stocks + ETFs + Crypto)**
 
-PatternIQ now supports trading across multiple asset classes to enhance diversification and returns:
+PatternIQ supports trading across multiple asset classes to enhance diversification and returns. The system automatically ingests and trades **527 symbols total**:
 
 #### **Available Asset Classes**
 
-**📈 Market Indexes (ETFs)**
-- **SPY** - S&P 500 ETF (broad market exposure)
-- **QQQ** - NASDAQ-100 ETF (technology focus)
-- **DIA** - Dow Jones ETF (blue chip stocks)
-- **IWM** - Russell 2000 ETF (small cap exposure)
-- **VTI** - Total Stock Market ETF (complete market)
-- **EFA** - International Developed Markets
+**📊 S&P 500 Stocks (501 symbols)**
+- All S&P 500 constituents
+- Filtered by volume and market cap for quality
+- Primary asset class (70% allocation target)
 
-**₿ Cryptocurrencies** (24/7 Trading)
-- **BTC-USD** - Bitcoin (crypto blue chip)
-- **ETH-USD** - Ethereum (smart contracts)
-- **SOL-USD** - Solana (high performance)
-- **ADA-USD** - Cardano (proof of stake)
-- **BNB-USD** - Binance Coin (exchange token)
-- **XRP-USD** - Ripple (payments)
-- **MATIC-USD** - Polygon (scaling solution)
+**📈 Sector ETFs (11 symbols)**
+- **XLK** - Technology Sector ETF
+- **XLF** - Financials Sector ETF
+- **XLV** - Healthcare Sector ETF
+- **XLE** - Energy Sector ETF
+- **XLI** - Industrials Sector ETF
+- **XLU** - Utilities Sector ETF
+- **XLB** - Materials Sector ETF
+- **XLRE** - Real Estate Sector ETF
+- **XLP** - Consumer Staples Sector ETF
+- **XLY** - Consumer Discretionary Sector ETF
+- **XLC** - Communication Services Sector ETF
+
+**💰 Crypto ETFs (4 symbols)**
+- **GBTC** - Bitcoin Trust
+- **ETHE** - Ethereum Trust
+- **BITO** - Bitcoin Strategy ETF
+- **BITI** - Short Bitcoin Strategy ETF
+
+**🌐 International ETFs (6 symbols)**
+- **EFA** - EAFE Developed Markets
+- **EEM** - Emerging Markets
+- **VWO** - Emerging Markets
+- **FXI** - China Large-Cap
+- **EWJ** - Japan
+- **EWZ** - Brazil
+
+**📈 Factor ETFs (5 symbols)**
+- **MTUM** - Momentum Factor
+- **QUAL** - Quality Factor
+- **SIZE** - Small Cap Factor
+- **USMV** - Minimum Volatility
+- **VLUE** - Value Factor
+
+**⚠️ Important**: To enable multi-asset trading, you **must** set `PROCESS_ALL_SYMBOLS=true` during data ingestion. See "Environment Configuration" section below.
 
 #### **Smart Position Limits by Asset Class**
 
@@ -706,25 +730,56 @@ python run_patterniq.py api-only --port 9000
 
 ### **Environment Configuration**
 
-Create a `.env` file or set environment variables:
+PatternIQ uses environment variables for configuration. The easiest way to configure is using a `.env` file:
 
 ```bash
-# BATCH MODE (run once and exit)
-export PATTERNIQ_ALWAYS_ON=false
-export START_API_SERVER=false
-export GENERATE_REPORTS=true
-export SEND_TELEGRAM_ALERTS=true
-export TELEGRAM_BOT_TOKEN='your_bot_token'
-export TELEGRAM_CHAT_IDS='your_chat_id'
+# Copy the example file
+cp .env.example .env
 
-# ALWAYS-ON MODE (continuous operation) 
-export PATTERNIQ_ALWAYS_ON=true
-export START_API_SERVER=true
-export API_HOST=0.0.0.0
-export API_PORT=8000
+# Edit .env with your settings
+nano .env  # or use your preferred editor
+```
 
-# DATABASE
-export PATTERNIQ_DB_URL="postgresql://username:password@localhost:5432/patterniq"
+#### **Essential Configuration**
+
+**For Batch Mode (Daily Runs):**
+```bash
+PATTERNIQ_ALWAYS_ON=false
+START_API_SERVER=false
+GENERATE_REPORTS=true
+SEND_TELEGRAM_ALERTS=true
+TELEGRAM_BOT_TOKEN='your_bot_token'
+TELEGRAM_CHAT_IDS='your_chat_id'
+PROCESS_ALL_SYMBOLS=true  # Process all 527 symbols (stocks + ETFs)
+```
+
+**For Always-On Mode (Continuous Operation):**
+```bash
+PATTERNIQ_ALWAYS_ON=true
+START_API_SERVER=true
+API_HOST=0.0.0.0
+API_PORT=8000
+PATTERNIQ_DB_URL="postgresql://username:password@localhost:5432/patterniq"
+```
+
+**For Multi-Asset Trading:**
+```bash
+ENABLE_MULTI_ASSET=true  # Enable stocks, ETFs, crypto trading
+PROCESS_ALL_SYMBOLS=true  # Ingest all symbols including ETFs
+```
+
+#### **Complete Environment Variables Reference**
+
+See `.env.example` for a complete list of all available environment variables, including:
+
+- **System Mode**: `DEMO_MODE`, `PATTERNIQ_ALWAYS_ON`
+- **Database**: `PATTERNIQ_DB_URL`, `DB_MODE`, `SQLITE_PATH`
+- **API Server**: `API_HOST`, `API_PORT`, `START_API_SERVER`
+- **Telegram**: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `SEND_TELEGRAM_ALERTS`
+- **Trading**: `PAPER_TRADING`, `INITIAL_CAPITAL`, `MAX_POSITION_SIZE`, `ENABLE_MULTI_ASSET`, `LEVERAGE_MULTIPLIER`
+- **Data Quality**: `MIN_DAILY_VOLUME`, `MIN_MARKET_CAP`, `MIN_DAYS_LISTED`
+- **Time Horizons**: `ENABLE_TIME_HORIZONS`, `DEFAULT_TIME_HORIZON`
+- **External APIs**: `ALPHA_VANTAGE_API_KEY`, `POLYGON_API_KEY`, `CRYPTOCOMPARE_API_KEY`
 ```
 
 See `.env.example` for complete configuration options.
@@ -1019,6 +1074,80 @@ bot = AutoTradingBot(
 - **Information Coefficient**: 0.05-0.15 (signal predictive power)
 
 **Note**: Past performance does not guarantee future results. All trading involves risk of loss.
+
+---
+
+## 📚 Complete Environment Variables Reference
+
+PatternIQ uses environment variables for all configuration. The `.env.example` file contains a complete template with all available options and detailed comments.
+
+### **Quick Reference by Category**
+
+#### **System Mode**
+- `DEMO_MODE` - Use sample data (default: false)
+- `PATTERNIQ_ALWAYS_ON` - Continuous operation mode (default: false)
+
+#### **Database**
+- `PATTERNIQ_DB_URL` - PostgreSQL connection string
+- `DB_MODE` - Database mode: auto, sqlite, postgres (default: auto)
+- `SQLITE_PATH` - SQLite database file path (default: data/patterniq.db)
+- `AUTO_MIGRATE` - Auto-migrate when switching modes (default: true)
+
+#### **API Server**
+- `API_HOST` - API server host (default: 127.0.0.1)
+- `API_PORT` - API server port (default: 8000)
+- `START_API_SERVER` - Start API server (default: false)
+
+#### **Telegram**
+- `TELEGRAM_BOT_TOKEN` - Bot token from @BotFather
+- `TELEGRAM_CHAT_IDS` - Comma-separated chat IDs
+- `SEND_TELEGRAM_ALERTS` - Enable Telegram notifications (default: false)
+
+#### **Trading**
+- `PAPER_TRADING` - Paper trading mode (default: true)
+- `INITIAL_CAPITAL` - Starting capital (default: 100000.0)
+- `MAX_POSITION_SIZE` - Max position size fraction (default: 0.05)
+- `ENABLE_MULTI_ASSET` - Enable multi-asset trading (default: true)
+- `LEVERAGE_MULTIPLIER` - Leverage multiplier (default: 1.2)
+
+#### **Data & Multi-Asset** ⚠️
+- `PROCESS_ALL_SYMBOLS` - Process all 527 symbols (default: false) **REQUIRED for multi-asset**
+- `UNIVERSE` - Trading universe (default: SP500)
+- `MIN_DAILY_VOLUME` - Minimum daily volume filter (default: 10000000)
+- `MIN_MARKET_CAP` - Minimum market cap filter (default: 1000000000)
+- `MIN_DAYS_LISTED` - Minimum days listed (default: 90)
+
+#### **Time Horizons**
+- `ENABLE_TIME_HORIZONS` - Enable time horizon strategies (default: true)
+- `DEFAULT_TIME_HORIZON` - Default horizon: short, mid, long (default: mid)
+
+#### **External APIs (Optional)**
+- `ALPHA_VANTAGE_API_KEY` - Alpha Vantage API key (backup data source)
+- `POLYGON_API_KEY` - Polygon.io API key (backup data source)
+- `CRYPTOCOMPARE_API_KEY` - CryptoCompare API key (crypto backup)
+
+### **Configuration Examples**
+
+**Minimal Setup (Batch Mode with Multi-Asset):**
+```bash
+PATTERNIQ_ALWAYS_ON=false
+PROCESS_ALL_SYMBOLS=true  # ⚠️ Required for multi-asset
+ENABLE_MULTI_ASSET=true
+SEND_TELEGRAM_ALERTS=true
+TELEGRAM_BOT_TOKEN=your_token
+TELEGRAM_CHAT_IDS=your_chat_id
+```
+
+**Production Setup (Always-On with PostgreSQL):**
+```bash
+PATTERNIQ_ALWAYS_ON=true
+START_API_SERVER=true
+PATTERNIQ_DB_URL=postgresql://user:pass@host:5432/patterniq
+PROCESS_ALL_SYMBOLS=true  # ⚠️ Required for multi-asset
+ENABLE_MULTI_ASSET=true
+```
+
+For complete documentation with all options and detailed explanations, see `.env.example` file in the project root.
 
 ---
 

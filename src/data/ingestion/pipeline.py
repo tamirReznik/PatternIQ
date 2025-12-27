@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 # Import our modules
 from src.providers.sp500_provider import SP500Provider
+from src.providers.multi_asset_provider import MultiAssetProvider
 from src.data.models import Instrument, Bars1d, Base
 
 # #region agent log
@@ -42,8 +43,16 @@ def setup_database():
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return SessionLocal(), engine
 
-def run_data_ingestion_pipeline():
-    """Run the complete data ingestion pipeline for PatternIQ"""
+def run_data_ingestion_pipeline(start_date: str = None, end_date: str = None):
+    """
+    Run the complete data ingestion pipeline for PatternIQ
+    
+    Args:
+        start_date: Start date for data ingestion (YYYY-MM-DD format). 
+                   If None, defaults to 5 years back from today.
+        end_date: End date for data ingestion (YYYY-MM-DD format).
+                 If None, defaults to today.
+    """
     print("🚀 PatternIQ Full Pipeline Demo")
     print("=" * 60)
     
@@ -53,7 +62,45 @@ def run_data_ingestion_pipeline():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    provider = SP500Provider()
+    # Determine date range
+    # Default to last 30 days for fast initial testing, can be overridden
+    from datetime import date as date_type, timedelta
+    end = date_type.today()
+    
+    if start_date is None and end_date is None:
+        # Default: last 30 days for testing
+        start = end - timedelta(days=30)
+        start_date = start.strftime("%Y-%m-%d")
+        end_date = end.strftime("%Y-%m-%d")
+        print(f"📅 Using default date range: last 30 days ({start_date} to {end_date})")
+    else:
+        if start_date is None:
+            # If only end_date provided, default to 5 years back
+            start = date_type(end.year - 5, end.month, end.day)
+            start_date = start.strftime("%Y-%m-%d")
+        if end_date is None:
+            end_date = end.strftime("%Y-%m-%d")
+        print(f"📅 Data ingestion date range: {start_date} to {end_date}")
+    
+    # Initialize provider with volume filtering for mid/long-term trading
+    # Use config values if available, otherwise use defaults
+    try:
+        from src.core.config import config
+        min_volume = config.min_daily_volume
+        min_mcap = config.min_market_cap
+        min_days = config.min_days_listed
+    except:
+        # Fallback to environment variables or defaults
+        min_volume = float(os.getenv('MIN_DAILY_VOLUME', '10000000'))
+        min_mcap = float(os.getenv('MIN_MARKET_CAP', '1000000000'))
+        min_days = int(os.getenv('MIN_DAYS_LISTED', '90'))
+    
+    # Use MultiAssetProvider to get S&P 500 stocks + ETFs (sector, crypto, international, factor)
+    # MultiAssetProvider already includes S&P 500 symbols via _get_sp500_symbols()
+    provider = MultiAssetProvider(
+        min_daily_volume=min_volume,
+        min_market_cap=min_mcap
+    )
     db, engine = setup_database()
     # #region agent log
     _debug_log("pipeline.py:39", "Database setup complete", {
@@ -65,32 +112,75 @@ def run_data_ingestion_pipeline():
     # #endregion
     
     try:
-        # Step 1: Fetch S&P 500 symbols
-        print("\n📊 Step 1: Fetching S&P 500 Universe")
+        # Step 1: Fetch multi-asset symbols (S&P 500 stocks + ETFs)
+        print("\n📊 Step 1: Fetching Multi-Asset Universe")
         print("-" * 40)
         symbols = provider.list_symbols()
-        print(f"✅ Fetched {len(symbols)} S&P 500 symbols")
+        print(f"✅ Fetched {len(symbols)} symbols (S&P 500 stocks + ETFs)")
         
-        # Step 2: Process first 5 symbols for demo
-        test_symbols = symbols[:5]
-        print(f"\n📈 Step 2: Processing {len(test_symbols)} symbols for demo")
+        # Step 2: Process symbols
+        # Check if we should process all symbols or just a subset
+        process_all = os.getenv('PROCESS_ALL_SYMBOLS', 'false').lower() == 'true'
+        if process_all:
+            test_symbols = symbols
+            print(f"\n📈 Step 2: Processing all {len(test_symbols)} symbols")
+        else:
+            test_symbols = symbols[:5]
+            print(f"\n📈 Step 2: Processing {len(test_symbols)} symbols for demo (set PROCESS_ALL_SYMBOLS=true for all)")
         print("-" * 40)
         
         total_bars = 0
+        quality_issues = []
         for i, symbol in enumerate(test_symbols, 1):
             print(f"Processing {i}/{len(test_symbols)}: {symbol}")
             
-            # Fetch bars
-            # Extend historical window to ensure enough data for ret_20/60/120 features
-            bars = provider.get_bars(symbol, "1d", "2023-01-01", "2024-01-10")
+            # Fetch bars (with automatic fallback and quality validation)
+            # Use the provided date range (or default 5 years)
+            bars = provider.get_bars(symbol, "1d", start_date, end_date)
             if bars:
+                # Check data quality (already validated in get_bars, but log summary)
+                quality_report = provider._validate_data_quality(symbol, bars)
+                if quality_report.get('quality_score', 100) < 70:
+                    quality_issues.append({
+                        'symbol': symbol,
+                        'score': quality_report.get('quality_score', 0),
+                        'issues': quality_report.get('issues', [])
+                    })
+                # Get asset class metadata from provider
+                asset_metadata = None
+                if hasattr(provider, 'get_symbol_metadata'):
+                    asset_metadata = provider.get_symbol_metadata(symbol)
+                
+                # Determine sector/asset class
+                if asset_metadata:
+                    sector = asset_metadata.get('sector', 'Unknown')
+                    name = asset_metadata.get('description', f"{symbol} {asset_metadata.get('type', 'Security')}")
+                else:
+                    # Fallback: try to detect from provider's internal dictionaries
+                    if hasattr(provider, 'sector_etfs') and symbol in provider.sector_etfs:
+                        sector = provider.sector_etfs[symbol]
+                        name = f"Sector ETF - {sector}"
+                    elif hasattr(provider, 'crypto_etfs') and symbol in provider.crypto_etfs:
+                        sector = "Cryptocurrency"
+                        name = f"Crypto ETF - {provider.crypto_etfs[symbol]}"
+                    elif hasattr(provider, 'international_etfs') and symbol in provider.international_etfs:
+                        sector = "International"
+                        name = f"International ETF - {provider.international_etfs[symbol]}"
+                    elif hasattr(provider, 'factor_etfs') and symbol in provider.factor_etfs:
+                        sector = "Factor"
+                        name = f"Factor ETF - {provider.factor_etfs[symbol]}"
+                    else:
+                        # Default for S&P 500 stocks
+                        sector = "Technology" if symbol in ['AAPL', 'MSFT', 'GOOGL'] else "Unknown"
+                        name = f"{symbol} Corporation"
+                
                 # Save instrument
                 instrument = Instrument(
                     symbol=symbol,
-                    name=f"{symbol} Corporation",
+                    name=name,
                     is_active=True,
                     first_seen=date.today(),
-                    sector="Technology" if symbol in ['AAPL', 'MSFT', 'GOOGL'] else "Unknown"
+                    sector=sector
                 )
                 try:
                     db.add(instrument)
@@ -175,6 +265,37 @@ def run_data_ingestion_pipeline():
                 }, "A")
                 # #endregion
                 
+                # Determine universe based on asset class
+                # Get asset metadata to determine universe
+                asset_metadata = None
+                if hasattr(provider, 'get_symbol_metadata'):
+                    asset_metadata = provider.get_symbol_metadata(symbol)
+                
+                if asset_metadata:
+                    asset_class = asset_metadata.get('asset_class', 'equity')
+                    if asset_class == 'sector_etf':
+                        universe = "SECTOR_ETF"
+                    elif asset_class == 'crypto_etf':
+                        universe = "CRYPTO_ETF"
+                    elif asset_class == 'international_etf':
+                        universe = "INTERNATIONAL_ETF"
+                    elif asset_class == 'factor_etf':
+                        universe = "FACTOR_ETF"
+                    else:
+                        universe = "SP500"  # Default for stocks
+                else:
+                    # Fallback: check provider dictionaries
+                    if hasattr(provider, 'sector_etfs') and symbol in provider.sector_etfs:
+                        universe = "SECTOR_ETF"
+                    elif hasattr(provider, 'crypto_etfs') and symbol in provider.crypto_etfs:
+                        universe = "CRYPTO_ETF"
+                    elif hasattr(provider, 'international_etfs') and symbol in provider.international_etfs:
+                        universe = "INTERNATIONAL_ETF"
+                    elif hasattr(provider, 'factor_etfs') and symbol in provider.factor_etfs:
+                        universe = "FACTOR_ETF"
+                    else:
+                        universe = "SP500"  # Default for stocks
+                
                 if is_sqlite:
                     # SQLite: Use INSERT OR IGNORE (works with composite primary keys)
                     try:
@@ -183,7 +304,7 @@ def run_data_ingestion_pipeline():
                             INSERT OR IGNORE INTO universe_membership (symbol, universe, effective_from, effective_to)
                             VALUES (:symbol, :universe, :effective_from, :effective_to)
                             """),
-                            {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
+                            {"symbol": symbol, "universe": universe, "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
                         )
                         # #region agent log
                         _debug_log("pipeline.py:174", "INSERT executed successfully", {
@@ -209,11 +330,35 @@ def run_data_ingestion_pipeline():
                         VALUES (:symbol, :universe, :effective_from, :effective_to)
                         ON CONFLICT (symbol, universe, effective_from) DO NOTHING
                         """),
-                        {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
+                        {"symbol": symbol, "universe": universe, "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
                     )
             conn.commit()
         
-        print(f"✅ Added {len(test_symbols)} symbols to S&P 500 universe")
+        # Count symbols by universe
+        with engine.connect() as conn:
+            if is_sqlite:
+                # SQLite: Use placeholders for IN clause
+                placeholders = ','.join(['?' for _ in test_symbols])
+                query = f"""
+                    SELECT universe, COUNT(DISTINCT symbol) as count
+                    FROM universe_membership
+                    WHERE symbol IN ({placeholders})
+                    GROUP BY universe
+                """
+                result = conn.execute(text(query), test_symbols)
+            else:
+                # PostgreSQL: Use ANY with array
+                result = conn.execute(text("""
+                    SELECT universe, COUNT(DISTINCT symbol) as count
+                    FROM universe_membership
+                    WHERE symbol = ANY(:symbols)
+                    GROUP BY universe
+                """), {"symbols": test_symbols})
+            universe_counts = {row[0]: row[1] for row in result.fetchall()}
+        
+        print(f"✅ Added {len(test_symbols)} symbols to universes:")
+        for uni, count in universe_counts.items():
+            print(f"   {uni}: {count} symbols")
         
         # Step 4: Add sample fundamental data
         print(f"\n💰 Step 4: Adding Sample Fundamental Data")
@@ -245,6 +390,17 @@ def run_data_ingestion_pipeline():
             conn.commit()
         
         print(f"✅ Added fundamental data for {len([s for s in sample_fundamentals.keys() if s in test_symbols])} symbols")
+
+        # Log data quality summary
+        if quality_issues:
+            print(f"\n⚠️  Data Quality Issues Detected:")
+            print("-" * 40)
+            for issue in quality_issues:
+                print(f"  {issue['symbol']}: Quality Score {issue['score']}/100")
+                for problem in issue['issues'][:3]:  # Show first 3 issues
+                    print(f"    - {problem}")
+        else:
+            print(f"\n✅ All data passed quality validation")
 
         # Step 5: Generate comprehensive report
         print(f"\n📋 Step 5: Pipeline Summary Report")

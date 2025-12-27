@@ -9,6 +9,7 @@ Expected boost: +2-3% annual return with moderate risk increase
 
 import time
 import logging
+import threading
 import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
@@ -26,9 +27,18 @@ class MultiAssetProvider(DataSource):
     5. Factor ETFs (MTUM, QUAL, VLUE)
     """
 
-    def __init__(self):
+    def __init__(self, min_daily_volume: float = 10_000_000, min_market_cap: float = 1_000_000_000):
         self.logger = logging.getLogger("MultiAssetProvider")
         self.rate_limiter = self._create_rate_limiter(rate=10, per=60)
+        self.rate_limiter_lock = threading.Lock()  # Thread-safe rate limiting
+        
+        # Volume and quality filters for mid/long-term trading
+        self.min_daily_volume = min_daily_volume  # $10M minimum daily volume
+        self.min_market_cap = min_market_cap  # $1B minimum market cap
+        
+        # Cache for symbol metadata to reduce API calls
+        self._symbol_cache = {}
+        self._cache_ttl = 86400  # 24 hours cache TTL
 
         # Define asset universes
         self.sector_etfs = {
@@ -85,22 +95,28 @@ class MultiAssetProvider(DataSource):
         }
 
     def _acquire_rate_limit(self):
-        """Acquire rate limit token"""
-        now = time.time()
-        elapsed = now - self.rate_limiter['last']
-        self.rate_limiter['tokens'] = min(
-            self.rate_limiter['rate'],
-            self.rate_limiter['tokens'] + elapsed * (self.rate_limiter['rate'] / self.rate_limiter['per'])
-        )
+        """Acquire rate limit token (thread-safe)"""
+        with self.rate_limiter_lock:
+            now = time.time()
+            elapsed = now - self.rate_limiter['last']
+            self.rate_limiter['tokens'] = min(
+                self.rate_limiter['rate'],
+                self.rate_limiter['tokens'] + elapsed * (self.rate_limiter['rate'] / self.rate_limiter['per'])
+            )
 
-        if self.rate_limiter['tokens'] >= 1:
-            self.rate_limiter['tokens'] -= 1
-            self.rate_limiter['last'] = now
-        else:
-            sleep_time = (1 - self.rate_limiter['tokens']) * (self.rate_limiter['per'] / self.rate_limiter['rate'])
+            if self.rate_limiter['tokens'] >= 1:
+                self.rate_limiter['tokens'] -= 1
+                self.rate_limiter['last'] = now
+            else:
+                sleep_time = (1 - self.rate_limiter['tokens']) * (self.rate_limiter['per'] / self.rate_limiter['rate'])
+                # Release lock before sleeping to allow other threads to proceed
+                self.rate_limiter['last'] = time.time()
+        
+        # Sleep outside the lock to avoid blocking other threads
+        if self.rate_limiter['tokens'] < 1:
             time.sleep(sleep_time)
-            self.rate_limiter['tokens'] = 0
-            self.rate_limiter['last'] = time.time()
+            with self.rate_limiter_lock:
+                self.rate_limiter['tokens'] = 0
 
     def list_symbols(self) -> List[str]:
         """Get comprehensive symbol list including all asset classes"""
@@ -203,18 +219,78 @@ class MultiAssetProvider(DataSource):
             }
 
     def get_bars(self, ticker: str, timeframe: str, start, end) -> List[Dict[str, Any]]:
-        """Get price bars for any asset class"""
-        self.logger.info(f"Fetching bars for {ticker} [{timeframe}] from {start} to {end}")
+        """Get price bars for any asset class with fallback and quality validation"""
+        bars = self._get_bars_with_fallback(ticker, timeframe, start, end)
+        
+        # Validate data quality
+        if bars:
+            quality_report = self._validate_data_quality(ticker, bars)
+            if quality_report.get('quality_score', 100) < 70:
+                self.logger.warning(f"Data quality issues for {ticker}: {quality_report.get('issues', [])}")
+        
+        return bars
+    
+    def _get_bars_with_fallback(self, ticker: str, timeframe: str, start, end) -> List[Dict[str, Any]]:
+        """Get bars with fallback: Yahoo Finance → Alpha Vantage → Polygon"""
+        # Primary: Yahoo Finance
+        try:
+            return self._get_bars_yahoo(ticker, timeframe, start, end)
+        except Exception as e:
+            self.logger.warning(f"Yahoo Finance failed for {ticker}: {e}")
+        
+        # Fallback 1: Alpha Vantage (if API key available)
+        import os
+        alpha_vantage_key = os.getenv('ALPHA_VANTAGE_API_KEY')
+        if alpha_vantage_key:
+            try:
+                return self._get_bars_alpha_vantage(ticker, start, end)
+            except Exception as e:
+                self.logger.warning(f"Alpha Vantage failed for {ticker}: {e}")
+        
+        # Fallback 2: Polygon.io (if API key available)
+        polygon_key = os.getenv('POLYGON_API_KEY')
+        if polygon_key:
+            try:
+                return self._get_bars_polygon(ticker, start, end)
+            except Exception as e:
+                self.logger.warning(f"Polygon.io failed for {ticker}: {e}")
+        
+        self.logger.error(f"All data sources failed for {ticker}")
+        return []
+    
+    def _get_bars_yahoo(self, ticker: str, timeframe: str, start, end) -> List[Dict[str, Any]]:
+        """Yahoo Finance method - supports single symbol or list of symbols for batch downloads"""
+        self.logger.debug(f"Fetching bars for {ticker} [{timeframe}] from {start} to {end} via Yahoo Finance")
         self._acquire_rate_limit()
 
-        try:
-            data = yf.download(ticker, start=start, end=end, interval="1d" if timeframe=="1d" else "1m", progress=False)
+        # Support both single symbol and list of symbols for batch downloads
+        data = yf.download(ticker, start=start, end=end, interval="1d" if timeframe=="1d" else "1m", progress=False, auto_adjust=True)
 
-            if data.empty:
-                self.logger.warning(f"No data retrieved for {ticker}")
-                return []
+        if data.empty:
+            raise ValueError(f"No data returned from Yahoo Finance for {ticker}")
 
-            bars = []
+        bars = []
+        # Handle both single symbol and batch downloads (multi-index columns)
+        if isinstance(ticker, list):
+            # Batch download - data has multi-index columns (symbol, OHLCV)
+            for sym in ticker:
+                metadata = self.get_symbol_metadata(sym)
+                if (sym, 'Open') in data.columns:
+                    for idx, row in data.iterrows():
+                        bars.append({
+                            "t": idx,
+                            "o": float(row[(sym, 'Open')]),
+                            "h": float(row[(sym, 'High')]),
+                            "l": float(row[(sym, 'Low')]),
+                            "c": float(row[(sym, 'Close')]),
+                            "v": int(row[(sym, 'Volume')]),
+                            "vendor": "yahoo",
+                            "asset_class": metadata.get("asset_class", "unknown"),
+                            "symbol": sym  # Include symbol for batch processing
+                        })
+        else:
+            # Single symbol download
+            metadata = self.get_symbol_metadata(ticker)
             for idx, row in data.iterrows():
                 bars.append({
                     "t": idx,
@@ -224,13 +300,143 @@ class MultiAssetProvider(DataSource):
                     "c": float(row["Close"]),
                     "v": int(row["Volume"]),
                     "vendor": "yahoo",
-                    "asset_class": self.get_symbol_metadata(ticker)["asset_class"]
+                    "asset_class": metadata.get("asset_class", "unknown")
                 })
-            return bars
-
-        except Exception as e:
-            self.logger.error(f"Error fetching bars for {ticker}: {e}")
-            return []
+        return bars
+    
+    def _get_bars_alpha_vantage(self, ticker: str, start, end) -> List[Dict[str, Any]]:
+        """Alpha Vantage fallback"""
+        import os
+        alpha_vantage_key = os.getenv('ALPHA_VANTAGE_API_KEY')
+        if not alpha_vantage_key:
+            raise ValueError("Alpha Vantage API key not configured")
+        
+        self.logger.debug(f"Fetching bars for {ticker} via Alpha Vantage")
+        url = "https://www.alphavantage.co/query"
+        params = {
+            'function': 'TIME_SERIES_DAILY_ADJUSTED',
+            'symbol': ticker,
+            'outputsize': 'full',
+            'apikey': alpha_vantage_key
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'Error Message' in data or 'Note' in data:
+            raise ValueError(f"Alpha Vantage error: {data.get('Error Message', data.get('Note', 'Unknown error'))}")
+        
+        if 'Time Series (Daily)' not in data:
+            raise ValueError(f"No time series data in Alpha Vantage response for {ticker}")
+        
+        bars = []
+        metadata = self.get_symbol_metadata(ticker)
+        time_series = data['Time Series (Daily)']
+        for date_str, values in time_series.items():
+            if start <= date_str <= end:
+                bars.append({
+                    "t": pd.to_datetime(date_str),
+                    "o": float(values['1. open']),
+                    "h": float(values['2. high']),
+                    "l": float(values['3. low']),
+                    "c": float(values['4. close']),
+                    "v": int(values['6. volume']),
+                    "vendor": "alpha_vantage",
+                    "asset_class": metadata.get("asset_class", "unknown")
+                })
+        
+        return sorted(bars, key=lambda x: x['t'])
+    
+    def _get_bars_polygon(self, ticker: str, start, end) -> List[Dict[str, Any]]:
+        """Polygon.io fallback"""
+        import os
+        polygon_key = os.getenv('POLYGON_API_KEY')
+        if not polygon_key:
+            raise ValueError("Polygon.io API key not configured")
+        
+        self.logger.debug(f"Fetching bars for {ticker} via Polygon.io")
+        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}"
+        params = {
+            'adjusted': 'true',
+            'sort': 'asc',
+            'limit': 5000,
+            'apiKey': polygon_key
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') != 'OK':
+            raise ValueError(f"Polygon.io error: {data.get('status', 'Unknown error')}")
+        
+        bars = []
+        metadata = self.get_symbol_metadata(ticker)
+        for result in data.get('results', []):
+            bars.append({
+                "t": pd.to_datetime(result['t'], unit='ms'),
+                "o": float(result['o']),
+                "h": float(result['h']),
+                "l": float(result['l']),
+                "c": float(result['c']),
+                "v": int(result['v']),
+                "vendor": "polygon",
+                "asset_class": metadata.get("asset_class", "unknown")
+            })
+        
+        return bars
+    
+    def _validate_data_quality(self, ticker: str, bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Validate data quality: detect gaps, outliers, and anomalies"""
+        if not bars:
+            return {"status": "error", "issue": "no_data", "quality_score": 0}
+        
+        issues = []
+        dates = [bar['t'] for bar in bars]
+        dates_sorted = sorted(dates)
+        
+        # Check for date gaps (more than 4 days = potential data issue)
+        for i in range(1, len(dates_sorted)):
+            if isinstance(dates_sorted[i], pd.Timestamp) and isinstance(dates_sorted[i-1], pd.Timestamp):
+                gap = (dates_sorted[i] - dates_sorted[i-1]).days
+                if gap > 4:  # More than weekend gap
+                    issues.append(f"Data gap: {gap} days between {dates_sorted[i-1]} and {dates_sorted[i]}")
+        
+        # Check for extreme price movements (potential data errors)
+        for i in range(1, len(bars)):
+            prev_close = bars[i-1]['c']
+            curr_open = bars[i]['o']
+            if prev_close > 0:
+                gap_pct = abs(curr_open - prev_close) / prev_close
+                if gap_pct > 0.5:  # 50% gap (likely split or error)
+                    ratio = curr_open / prev_close if prev_close > 0 else 1
+                    if not (0.3 <= ratio <= 3.0):  # Allow 3:1 splits but flag extreme
+                        issues.append(f"Extreme price gap: {gap_pct:.1%} on {bars[i]['t']}")
+        
+        # Check for zero or negative prices
+        for bar in bars:
+            if bar['c'] <= 0 or bar['o'] <= 0 or bar['h'] <= 0 or bar['l'] <= 0:
+                issues.append(f"Invalid price data on {bar['t']}")
+        
+        # Check volume anomalies (spikes > 10x average)
+        volumes = [bar['v'] for bar in bars if bar['v'] > 0]
+        if volumes:
+            avg_volume = sum(volumes) / len(volumes)
+            for bar in bars:
+                if bar['v'] > avg_volume * 10 and avg_volume > 0:
+                    issues.append(f"Volume spike: {bar['v']/avg_volume:.1f}x average on {bar['t']}")
+        
+        quality_score = max(0, 100 - len(issues) * 10)
+        
+        return {
+            "status": "validated",
+            "symbol": ticker,
+            "total_bars": len(bars),
+            "date_range": f"{dates_sorted[0]} to {dates_sorted[-1]}" if dates_sorted else "none",
+            "issues": issues,
+            "quality_score": quality_score
+        }
 
     def get_corporate_actions(self, ticker: str, start, end) -> List[Dict[str, Any]]:
         """Get corporate actions - primarily for stocks, limited for ETFs"""

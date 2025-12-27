@@ -52,6 +52,11 @@ class PatternIQConfig:
     universe: str = "SP500"
     lookback_days: int = 1800  # ~5 years
     demo_symbols_limit: int = 5  # For demo mode
+    
+    # Data Quality Filters (for mid/long-term trading)
+    min_daily_volume: float = 10_000_000  # $10M minimum daily volume
+    min_market_cap: float = 1_000_000_000  # $1B minimum market cap
+    min_days_listed: int = 90  # At least 90 days of trading history
 
     # Time Horizon Strategies
     enable_time_horizons: bool = True
@@ -246,6 +251,11 @@ def load_config() -> PatternIQConfig:
         universe=os.getenv("UNIVERSE", "SP500"),
         lookback_days=int(os.getenv("LOOKBACK_DAYS", "1800")),
         demo_symbols_limit=int(os.getenv("DEMO_SYMBOLS_LIMIT", "5")),
+        
+        # Data Quality Filters
+        min_daily_volume=float(os.getenv("MIN_DAILY_VOLUME", "10000000")),
+        min_market_cap=float(os.getenv("MIN_MARKET_CAP", "1000000000")),
+        min_days_listed=int(os.getenv("MIN_DAYS_LISTED", "90")),
 
         # Time Horizons
         enable_time_horizons=os.getenv("ENABLE_TIME_HORIZONS", "true").lower() == "true",

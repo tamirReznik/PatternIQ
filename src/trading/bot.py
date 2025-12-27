@@ -327,6 +327,7 @@ class TradingBot:
                 
                 if price <= 0:
                     skipped_trades.append({"symbol": symbol, "reason": "Invalid price"})
+                    self.logger.debug(f"⏭️ Skipping {symbol}: Invalid price")
                     continue
                 
                 # Get time horizon
@@ -341,6 +342,7 @@ class TradingBot:
                 # Check signal threshold
                 if abs(signal_score) < strategy_params['min_signal_threshold']:
                     skipped_trades.append({"symbol": symbol, "reason": f"Signal below threshold ({strategy_params['min_signal_threshold']})"})
+                    self.logger.debug(f"⏭️ Skipping {symbol}: Signal {signal_score:.3f} below threshold {strategy_params['min_signal_threshold']}")
                     continue
                 
                 # Determine asset class
@@ -366,6 +368,7 @@ class TradingBot:
                         cost = shares * price + self.trading_fee
                         
                         if cost <= self.cash_balance:
+                            self.logger.debug(f"✅ Buying {shares} shares of {symbol} @ ${price:.2f} (signal: {signal_score:.3f}, time_horizon: {time_horizon_str})")
                             if symbol in self.positions:
                                 # Add to existing position
                                 existing = self.positions[symbol]
@@ -410,8 +413,10 @@ class TradingBot:
                             skipped_trades.append({"symbol": symbol, "reason": "Insufficient cash"})
                     else:
                         skipped_trades.append({"symbol": symbol, "reason": f"Trade size too small (${adjusted_dollars:.2f})"})
+                        self.logger.debug(f"⏭️ Skipping {symbol}: Trade size too small (${adjusted_dollars:.2f})")
                 else:
                     skipped_trades.append({"symbol": symbol, "reason": buy_decision['reason']})
+                    self.logger.debug(f"⏭️ Skipping {symbol}: {buy_decision['reason']}")
             
             # Check existing positions for exits (including sell signals from report)
             positions_to_close = []
