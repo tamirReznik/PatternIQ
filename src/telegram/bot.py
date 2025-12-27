@@ -200,11 +200,16 @@ class PatternIQBot:
         """Send daily report to all registered chat IDs"""
 
         if not self.bot:
-            self.logger.error("Telegram bot not initialized")
+            error_msg = "Telegram bot not initialized. Check TELEGRAM_BOT_TOKEN environment variable."
+            self.logger.error(error_msg)
+            print(f"❌ {error_msg}")
             return False
 
         if not self.chat_ids:
-            self.logger.warning("No chat IDs registered for reports")
+            error_msg = "No chat IDs registered. Set TELEGRAM_CHAT_IDS environment variable."
+            self.logger.warning(error_msg)
+            print(f"⚠️  {error_msg}")
+            print("   Example: export TELEGRAM_CHAT_IDS='123456789'")
             return False
 
         if not report_date:

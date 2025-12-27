@@ -9,14 +9,55 @@ PatternIQ is a sophisticated algorithmic trading system designed to generate pas
 ## 🎯 What PatternIQ Does for You
 
 **PatternIQ delivers daily trading intelligence to help you generate passive income:**
-- **Identify High-Probability Trades**: Spots stocks/crypto with strong momentum or mean-reversion patterns
-- **Time Horizon Strategies**: Separates recommendations into short-term (days-weeks), mid-term (weeks-months), and long-term (months-years) strategies
-- **Optimize Portfolio Construction**: Provides specific position sizes and risk-adjusted recommendations for each time horizon
-- **Minimize Risk**: Built-in safeguards to avoid earnings announcements and high-volatility periods
-- **Track Performance**: Comprehensive analytics to measure strategy effectiveness over time
-- **Historical Validation**: Backtest algorithms across different market conditions to verify performance
-- **Automate Delivery**: Professional reports via API and Telegram notifications
-- **Monitor Portfolio**: Real-time tracking of portfolio performance vs initial investment
+
+### Core Features
+
+1. **📈 Intelligent Trade Identification**
+   - Spots stocks/crypto with strong momentum or mean-reversion patterns
+   - Uses proprietary signal blending with Information Coefficient (IC) weighting
+   - Filters out low-quality opportunities using fundamental analysis
+
+2. **⏳ Time Horizon Strategies**
+   - **Short-Term** (Days to Weeks): Quick momentum plays, tighter stops
+   - **Mid-Term** (Weeks to Months): Balanced risk-reward, trend following
+   - **Long-Term** (Months to Years): Fundamental value, macro trends
+   - Each recommendation includes appropriate time horizon classification
+
+3. **💼 Portfolio Optimization**
+   - Specific position sizes for each recommendation (typically 1-5% per position)
+   - Risk-adjusted recommendations based on signal strength
+   - Multi-asset allocation (stocks, ETFs, crypto)
+   - Portfolio concentration limits and risk management
+
+4. **🛡️ Risk Management**
+   - Built-in safeguards to avoid earnings announcements
+   - Volatility gates to skip high-risk periods
+   - Stop-loss and take-profit recommendations
+   - Fundamental filtering to avoid overvalued stocks
+
+5. **📊 Performance Tracking**
+   - Comprehensive analytics to measure strategy effectiveness
+   - Real-time portfolio tracking vs initial investment
+   - Historical performance metrics (Sharpe ratio, alpha, win rate)
+   - Daily P&L and month-to-date performance
+
+6. **🔬 Historical Validation**
+   - Backtest algorithms across different market conditions
+   - Verify performance before deploying capital
+   - Compare strategies (short/mid/long-term)
+   - Monte Carlo simulation support
+
+7. **📱 Automated Delivery**
+   - Professional reports in JSON, HTML formats
+   - REST API for programmatic access
+   - Telegram notifications for mobile alerts
+   - Automated daily execution via scheduling
+
+8. **🤖 Automated Trading Bot**
+   - Paper trading simulation with real-time tracking
+   - Processes daily signals automatically
+   - Portfolio management and position tracking
+   - Performance metrics and reporting
 
 ---
 
@@ -29,9 +70,18 @@ PatternIQ includes sophisticated performance simulation tools to help you unders
 Test how the enhanced trading bot would have performed over any historical period:
 
 #### Unified Backtest Runner (Recommended)
+
+**Important**: Activate virtual environment first!
+
 ```bash
+# Activate venv (required)
+source venv/bin/activate
+
 # Quick 1-year backtest
 python scripts/simulations/run_backtest.py --period 1y
+
+# Or use the wrapper script (automatically activates venv)
+bash scripts/simulations/run_backtest.sh --period 1y
 
 # Test specific strategy (short/mid/long-term)
 python scripts/simulations/run_backtest.py --strategy short --period 6m
@@ -45,14 +95,23 @@ python scripts/simulations/run_backtest.py --strategy all --period 1y
 python scripts/simulations/run_backtest.py --start 2024-01-01 --end 2024-12-31 --capital 50000
 ```
 
-#### Legacy Simulation Scripts (Still Available)
-```bash
-# Quick 1-year simulation (scenario-based)
-python quick_simulation.py
+**Note**: If you see `ModuleNotFoundError: No module named 'numpy'`, make sure you've activated the virtual environment with `source venv/bin/activate`.
 
-# Flexible date range (scenario-based)
-python flexible_simulation.py 2024-01-01 --end_date 2024-12-31 --capital 50000
+#### Legacy Simulation Scripts (Deprecated - Use Unified Script Instead)
+
+**Note**: The old `quick_simulation.py` and `flexible_simulation.py` scripts have been consolidated into the unified `run_backtest.py` script. Use the commands above instead.
+
+If you need to use the legacy scripts (not recommended), they are located in `scripts/simulations/`:
+```bash
+# Activate venv first!
+source venv/bin/activate
+
+# Legacy scripts (deprecated)
+python scripts/simulations/quick_simulation.py
+python scripts/simulations/flexible_simulation.py 2024-01-01 --end_date 2024-12-31 --capital 50000
 ```
+
+**Recommended**: Use the unified backtest script instead (see examples above).
 
 #### Simulation Features
 - **Realistic Trading Logic**: Uses same sophisticated decision-making as live bot
@@ -206,9 +265,122 @@ The multi-asset bot implements sophisticated risk controls:
 
 ---
 
+## 🚀 Quick Start Guide
+
+### Installation
+
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd PatternIQ
+
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Setup database
+python scripts/setup/setup_db.py
+
+# 5. Configure environment (optional)
+cp .env.example .env  # Edit .env with your settings
+```
+
+### Running PatternIQ
+
+PatternIQ can run in three modes:
+
+#### 1. **Batch Mode** (Recommended for Daily Runs)
+Runs the complete pipeline once and exits. Perfect for scheduled daily execution.
+
+```bash
+# Basic batch run
+python run_patterniq.py batch
+
+# With Telegram notifications
+python run_patterniq.py batch --telegram
+
+# Custom database location
+python run_patterniq.py batch --db-mode sqlite --sqlite-path data/my_db.db
+```
+
+#### 2. **Always-On Mode** (Continuous Operation)
+Runs continuously, processing data and serving API requests.
+
+```bash
+# Start always-on mode
+python run_patterniq.py always-on
+
+# With custom API port
+python run_patterniq.py always-on --port 9000
+
+# With Telegram enabled
+python run_patterniq.py always-on --telegram --port 8000
+```
+
+#### 3. **API-Only Mode** (Server Only)
+Starts only the API server without running the pipeline. Useful for accessing existing data.
+
+```bash
+# Start API server only
+python run_patterniq.py api-only
+
+# Custom port
+python run_patterniq.py api-only --port 9000
+```
+
+### macOS Daily Automation
+
+For automated daily runs on macOS:
+
+```bash
+# Setup launchd scheduling (runs daily at 6:00 PM)
+bash scripts/scheduling/setup_scheduling.sh
+
+# Or manually run the daily batch
+python scripts/runners/macos_daily_runner.py
+```
+
+### Manual Pipeline Execution
+
+You can also run individual pipeline components:
+
+```bash
+# Important: Activate venv first!
+source venv/bin/activate
+
+# 1. Ingest market data
+python -m src.data.ingestion.pipeline
+
+# 2. Calculate features
+python -m src.features.momentum
+
+# 3. Generate signals
+python -m src.signals.rules
+
+# 4. Blend signals
+python -m src.signals.blend
+
+# 5. Generate reports
+python -m src.report.generator
+```
+
+### Run Full Demo
+
+Test all features:
+
+```bash
+source venv/bin/activate
+python scripts/demo/run_full_demo.py
+```
+
+---
+
 ## 📊 Daily System Output
 
-Every trading day (by 8:00 AM ET), PatternIQ generates:
+Every trading day, PatternIQ generates:
 
 ### 1. **Professional Trading Reports** (Multiple Formats)
 - **JSON Report**: Machine-readable data for API integration and external systems
@@ -569,10 +741,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Setup database
-python setup_db.py
+python scripts/setup/setup_db.py
 
 # Run initial data ingestion
-python -m src.data.demo_full_pipeline
+python -m src.data.ingestion.pipeline
 
 # Generate features and signals
 python -m src.features.momentum
@@ -586,7 +758,7 @@ python -m src.signals.blend
 source venv/bin/activate
 
 # 1. Update market data
-python -m src.data.demo_full_pipeline
+python -m src.data.ingestion.pipeline
 
 # 2. Calculate new features
 python -m src.features.momentum
@@ -601,13 +773,15 @@ python -m src.signals.blend
 python -m src.report.generator
 
 # 6. Send Telegram notifications (optional)
-python -m src.telegram.bot
+# Configure TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_IDS first
+# Then run with --telegram flag: python run_patterniq.py batch --telegram
 
 # 7. Process automated trading (paper trading)
-python -m src.trading.simulator
+# The trading bot runs automatically when using run_patterniq.py
 
 # 8. Start API server for external access
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
+python run_patterniq.py api-only --port 8000
+# Or: uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ```
 
 ---

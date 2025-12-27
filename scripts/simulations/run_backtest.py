@@ -6,16 +6,50 @@ Consolidates quick_simulation.py, flexible_simulation.py, and historical_backtes
 into a single unified system with strategy comparison and time horizon support.
 
 Usage:
+    # With venv activated:
+    source venv/bin/activate
     python scripts/simulations/run_backtest.py --strategy short --period 1y
+    
+    # Or use the wrapper script:
+    bash scripts/simulations/run_backtest.sh --period 1y
+    
+    # Custom date range:
     python scripts/simulations/run_backtest.py --start 2024-01-01 --end 2024-12-31 --capital 50000
-    python scripts/simulations/run_backtest.py --strategy all --period 2y
 """
 
 import sys
+import os
 import argparse
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, List
+
+# Check if running in venv
+def check_venv():
+    """Check if running in virtual environment and provide helpful error if not"""
+    in_venv = (
+        hasattr(sys, 'real_prefix') or 
+        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    )
+    
+    # Also check if venv path is in Python executable
+    python_path = sys.executable
+    venv_indicators = ['venv', 'virtualenv', '.venv']
+    path_has_venv = any(indicator in python_path for indicator in venv_indicators)
+    
+    if not in_venv and not path_has_venv:
+        print("❌ ERROR: Virtual environment not activated!")
+        print("")
+        print("Please activate the virtual environment first:")
+        print("  source venv/bin/activate")
+        print("")
+        print("Or use the wrapper script:")
+        print("  bash scripts/simulations/run_backtest.sh --period 1y")
+        print("")
+        sys.exit(1)
+
+# Check venv before importing dependencies
+check_venv()
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

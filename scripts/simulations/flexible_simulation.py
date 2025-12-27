@@ -230,7 +230,8 @@ def main():
         end_date = None
         capital = 100000
         print("📝 Running default simulation (1 year ago to today)")
-        print("💡 Usage: python flexible_simulation.py 2024-01-01 --end_date 2024-12-31 --capital 50000")
+        print("💡 Usage: python scripts/simulations/flexible_simulation.py 2024-01-01 --end_date 2024-12-31 --capital 50000")
+        print("💡 Note: This script is deprecated. Use 'python scripts/simulations/run_backtest.py --start 2024-01-01 --end 2024-12-31 --capital 50000' instead")
         print("")
     else:
         args = parser.parse_args()

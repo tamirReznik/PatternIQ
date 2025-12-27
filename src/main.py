@@ -166,29 +166,59 @@ class PatternIQOrchestrator:
             from src.telegram.bot import PatternIQBot
             bot = PatternIQBot()
 
-            # Use yesterday's date for the report (reports are generated for previous trading day)
-            report_date = datetime.now().date() - timedelta(days=1)
+            # Check if bot is properly initialized
+            if not bot.bot:
+                logger.error("❌ Telegram bot not initialized. Check configuration:")
+                logger.error("   1. TELEGRAM_BOT_TOKEN must be set")
+                logger.error("   2. python-telegram-bot package must be installed")
+                return
+
+            if not bot.chat_ids:
+                logger.error("❌ No Telegram chat IDs configured:")
+                logger.error("   Set TELEGRAM_CHAT_IDS environment variable")
+                logger.error("   Example: export TELEGRAM_CHAT_IDS='123456789'")
+                return
+
+            # Use today's date (reports are generated for current date)
+            report_date = date.today()
+            
+            # Also try yesterday in case report was generated yesterday
+            yesterday_date = report_date - timedelta(days=1)
             
             # Verify report exists before sending
             reports_dir = Path("reports")
             report_file = reports_dir / f"patterniq_report_{report_date.strftime('%Y%m%d')}.json"
+            yesterday_file = reports_dir / f"patterniq_report_{yesterday_date.strftime('%Y%m%d')}.json"
             
+            # Try today's report first, then yesterday's
+            target_date = None
             if report_file.exists():
-                await bot.send_daily_report(report_date)
-                logger.info("Telegram alert sent successfully")
+                target_date = report_date
+                logger.info(f"📱 Sending Telegram report for {report_date}")
+            elif yesterday_file.exists():
+                target_date = yesterday_date
+                logger.info(f"📱 Sending Telegram report for {yesterday_date} (latest available)")
             else:
-                logger.warning(f"No report found for date {report_date} - Telegram alert skipped")
+                logger.warning(f"⚠️  No report found for {report_date} or {yesterday_date}")
                 # Try to find latest available report
                 latest_json = sorted(reports_dir.glob("patterniq_report_*.json"))[-1] if list(reports_dir.glob("patterniq_report_*.json")) else None
                 if latest_json:
                     # Extract date from filename
                     date_str = latest_json.stem.replace("patterniq_report_", "")
-                    report_date = datetime.strptime(date_str, "%Y%m%d").date()
-                    await bot.send_daily_report(report_date)
-                    logger.info(f"Sent latest available report from {report_date}")
+                    target_date = datetime.strptime(date_str, "%Y%m%d").date()
+                    logger.info(f"📱 Using latest available report from {target_date}")
+            
+            if target_date:
+                success = await bot.send_daily_report(target_date)
+                if success:
+                    logger.info("✅ Telegram alert sent successfully")
+                else:
+                    logger.error("❌ Failed to send Telegram alert")
+            else:
+                logger.error("❌ No reports available to send via Telegram")
 
         except Exception as e:
-            logger.error(f"Telegram alert failed: {e}")
+            logger.error(f"❌ Telegram alert failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
 
