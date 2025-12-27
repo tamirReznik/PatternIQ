@@ -5,7 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PLIST_FILE="$PROJECT_DIR/com.patterniq.daily.plist"
+PLIST_FILE="$PROJECT_DIR/config/com.patterniq.daily.plist"
 PLIST_NAME="com.patterniq.daily"
 
 echo "🤖 PatternIQ Daily Scheduling Setup"
@@ -66,7 +66,7 @@ if launchctl list | grep -q "$PLIST_NAME"; then
     echo ""
     echo "🧪 To test the service manually:"
     echo "   cd $PROJECT_DIR"
-    echo "   python macos_daily_runner.py"
+    echo "   python scripts/runners/macos_daily_runner.py"
     echo ""
     echo "✅ Setup complete!"
 else

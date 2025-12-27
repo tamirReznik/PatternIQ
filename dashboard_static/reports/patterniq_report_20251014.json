@@ -1,0 +1,58 @@
+{
+  "date": "2025-10-14",
+  "market_overview": {
+    "regime": "Trending Market with Tech Leadership",
+    "signal_strength": 82,
+    "total_recommendations": 10,
+    "high_conviction": 4
+  },
+  "top_long": [
+    {
+      "symbol": "AAPL",
+      "sector": "Technology",
+      "signal": "STRONG BUY",
+      "score": 0.875,
+      "position_size": 3.0,
+      "price": 175.5,
+      "rationale": "Strong momentum with recent product launch"
+    },
+    {
+      "symbol": "MSFT",
+      "sector": "Technology",
+      "signal": "BUY",
+      "score": 0.724,
+      "position_size": 2.5,
+      "price": 415.25,
+      "rationale": "Cloud revenue growth acceleration"
+    }
+  ],
+  "top_short": [
+    {
+      "symbol": "XOM",
+      "sector": "Energy",
+      "signal": "SELL",
+      "score": -0.653,
+      "position_size": 2.0,
+      "price": 115.3,
+      "rationale": "Weakening demand and price pressures"
+    }
+  ],
+  "sector_scores": {
+    "Technology": 0.285,
+    "Healthcare": 0.145,
+    "Consumer Discretionary": 0.085,
+    "Financials": -0.035,
+    "Energy": -0.175
+  },
+  "risk_alerts": [
+    "Elevated market volatility expected this week",
+    "Earnings season starts next week"
+  ],
+  "performance": {
+    "yesterday": "+0.5%",
+    "week": "+1.2%",
+    "month": "+3.5%",
+    "year": "+12.8%",
+    "sharpe": 1.45
+  }
+}

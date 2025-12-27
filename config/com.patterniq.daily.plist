@@ -8,7 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/tamirreznik/code/private/PatternIQ/venv/bin/python</string>
-        <string>/Users/tamirreznik/code/private/PatternIQ/macos_daily_runner.py</string>
+        <string>/Users/tamirreznik/code/private/PatternIQ/scripts/runners/macos_daily_runner.py</string>
     </array>
 
     <key>WorkingDirectory</key>

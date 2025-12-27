@@ -11,8 +11,9 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src to path (go up from scripts/runners/ to project root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Setup logging
 logging.basicConfig(
@@ -30,7 +31,8 @@ class MacOSBatchRunner:
 
     def __init__(self):
         self.run_date = date.today()
-        self.project_dir = Path(__file__).parent
+        # Get project root (go up from scripts/runners/ to project root)
+        self.project_dir = Path(__file__).parent.parent.parent
 
     async def run_daily_batch(self):
         """Run complete daily batch with static dashboard generation"""

@@ -1,0 +1,118 @@
+{
+  "report_metadata": {
+    "report_id": "test-001",
+    "report_date": "2025-12-27",
+    "generated_at": "2025-09-20T16:30:00",
+    "system_version": "PatternIQ 1.0 MVP",
+    "report_type": "daily_trading_signals"
+  },
+  "executive_summary": {
+    "market_regime": "Test Mode - Demo Data",
+    "signal_strength": 85,
+    "total_recommendations": 6,
+    "strong_conviction_trades": 3
+  },
+  "trading_recommendations": {
+    "long_candidates": [
+      {
+        "symbol": "AAPL",
+        "company_name": "Apple Inc.",
+        "sector": "Technology",
+        "signal_score": 0.875,
+        "recommendation": "STRONG BUY",
+        "position_size": "3.0%",
+        "current_price": 175.5,
+        "volume": 50000000,
+        "rank": 1
+      },
+      {
+        "symbol": "MSFT",
+        "company_name": "Microsoft Corporation",
+        "sector": "Technology",
+        "signal_score": 0.724,
+        "recommendation": "BUY",
+        "position_size": "2.5%",
+        "current_price": 415.25,
+        "volume": 25000000,
+        "rank": 2
+      },
+      {
+        "symbol": "GOOGL",
+        "company_name": "Alphabet Inc.",
+        "sector": "Technology",
+        "signal_score": 0.681,
+        "recommendation": "BUY",
+        "position_size": "2.0%",
+        "current_price": 138.75,
+        "volume": 30000000,
+        "rank": 3
+      }
+    ],
+    "short_candidates": [
+      {
+        "symbol": "XOM",
+        "company_name": "Exxon Mobil Corporation",
+        "sector": "Energy",
+        "signal_score": -0.653,
+        "recommendation": "SELL",
+        "position_size": "2.0%",
+        "current_price": 115.3,
+        "volume": 15000000,
+        "rank": 1
+      },
+      {
+        "symbol": "CVX",
+        "company_name": "Chevron Corporation",
+        "sector": "Energy",
+        "signal_score": -0.587,
+        "recommendation": "SELL",
+        "position_size": "1.5%",
+        "current_price": 155.8,
+        "volume": 12000000,
+        "rank": 2
+      }
+    ]
+  },
+  "market_analysis": {
+    "market_regime": "Test Mode with Tech Leadership",
+    "signal_strength": 85,
+    "total_signals": 503,
+    "strong_longs": 3,
+    "strong_shorts": 2,
+    "sector_analysis": [
+      {
+        "sector": "Technology",
+        "symbol_count": 75,
+        "avg_signal": 0.285,
+        "sentiment": "Bullish",
+        "bullish_stocks": 52,
+        "bearish_stocks": 8
+      },
+      {
+        "sector": "Energy",
+        "symbol_count": 25,
+        "avg_signal": -0.175,
+        "sentiment": "Bearish",
+        "bullish_stocks": 6,
+        "bearish_stocks": 15
+      }
+    ]
+  },
+  "performance_tracking": {
+    "last_backtest_period": "2024-01-01 to 2024-09-20",
+    "signal_strategy": "combined_ic_weighted",
+    "total_positions_tested": 1250,
+    "status": "Test Mode - Demo Data"
+  },
+  "risk_alerts": [
+    "Tech sector concentration: 60% of long signals",
+    "Energy sector weakness continues",
+    "Test mode: Using sample data"
+  ],
+  "next_actions": [
+    "Review demo recommendations",
+    "Verify PDF generation working",
+    "Test HTML and JSON formats",
+    "Configure live data feeds"
+  ]
+}
