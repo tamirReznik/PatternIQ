@@ -259,6 +259,14 @@ class DatabaseManager:
             info["error"] = str(e)
 
         return info
+    
+    def is_using_sqlite(self) -> bool:
+        """Check if currently using SQLite"""
+        return self.config.is_using_sqlite()
+    
+    def is_using_postgres(self) -> bool:
+        """Check if currently using PostgreSQL"""
+        return self.config.is_using_postgres()
 
     def setup_database(self) -> bool:
         """Setup database with migration handling"""

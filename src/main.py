@@ -20,7 +20,6 @@ from src.features.momentum import demo_momentum_features
 from src.report.generator import generate_daily_report
 from src.signals.blend import blend_signals_ic_weighted
 from src.signals.rules import demo_signal_generation
-from src.trading.simulator import AutoTradingBot
 
 # Setup logging
 logging.basicConfig(
@@ -80,33 +79,42 @@ class PatternIQOrchestrator:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Pipeline failed: {e}")
+            from src.core.exceptions import PatternIQException
+            if isinstance(e, PatternIQException):
+                logger.error(f"❌ Pipeline failed: {e}")
+            else:
+                logger.error(f"❌ Pipeline failed with unexpected error: {e}", exc_info=True)
             return False
 
     async def run_trading(self):
-        """Initialize and run enhanced multi-asset trading bot"""
+        """Initialize and run unified trading bot"""
+        from src.core.exceptions import TradingBotError
+        
         try:
             if not self.trading_bot:
-                # Initialize enhanced multi-asset bot instead of basic bot
-                from src.trading.enhanced_multi_asset_bot import EnhancedMultiAssetBot
+                # Initialize unified trading bot
+                from src.trading.bot import TradingBot
 
-                self.trading_bot = EnhancedMultiAssetBot(
+                self.trading_bot = TradingBot(
                     initial_capital=self.config.initial_capital,
                     paper_trading=self.config.paper_trading,
                     max_position_size=self.config.max_position_size,
+                    enable_multi_asset=True,
                     leverage_multiplier=1.2,  # 20% conservative leverage
-                    trading_fee_per_trade=0.0
+                    trading_fee_per_trade=0.0,
+                    default_time_horizon="mid"
                 )
 
-                logger.info("🚀 Enhanced Multi-Asset Trading Bot initialized")
+                logger.info("🚀 Unified Trading Bot initialized")
                 logger.info(f"   Base Capital: ${self.config.initial_capital:,.0f}")
                 logger.info(f"   Effective Capital (1.2x leverage): ${self.trading_bot.effective_capital:,.0f}")
                 logger.info("   Asset Classes: Stocks + Sector ETFs + Crypto ETFs + International")
+                logger.info(f"   Default Time Horizon: {self.trading_bot.default_time_horizon.value.upper()}")
 
             # Process yesterday's report (reports are generated for previous trading day)
-            report_date = datetime.now().date() - timedelta(days=1)
-            result = self.trading_bot.process_enhanced_daily_report(report_date)
-            logger.info(f"Enhanced trading result: {result.get('status', 'completed')}")
+            current_date = date.today()
+            result = self.trading_bot.process_daily_report(current_date)
+            logger.info(f"Trading result: {result.get('status', 'completed')}")
 
             if result.get('status') == 'completed':
                 logger.info(f"   Executed: {result.get('trades_executed', 0)} trades")
@@ -125,34 +133,32 @@ class PatternIQOrchestrator:
                     for asset_class, trades in asset_class_trades.items():
                         logger.info(f"   {asset_class}: {len(trades)} trades")
 
-            # Log enhanced portfolio status
-            status = self.trading_bot.get_enhanced_portfolio_status()
-            logger.info(f"Enhanced Portfolio: ${status['initial_capital']:,.0f} → ${status['current_value']:,.0f} ({status['total_return']})")
+            # Log portfolio status
+            status = self.trading_bot.get_portfolio_status()
+            logger.info(f"Portfolio: ${status['initial_capital']:,.0f} → ${status['current_value']:,.0f} ({status['total_return']})")
 
             # Log asset allocation
-            current_allocation = status.get('current_allocation', {})
-            if current_allocation:
+            allocation_by_class = status.get('allocation_by_class', {})
+            if allocation_by_class:
                 logger.info("   Current Allocation:")
-                for asset_class, allocation in current_allocation.items():
+                for asset_class, allocation in allocation_by_class.items():
                     if allocation > 0.01:  # Only show >1% allocations
                         logger.info(f"     {asset_class}: {allocation:.1%}")
+            
+            # Log time horizon allocation
+            allocation_by_horizon = status.get('allocation_by_horizon', {})
+            if allocation_by_horizon:
+                logger.info("   Time Horizon Allocation:")
+                for horizon, allocation in allocation_by_horizon.items():
+                    if allocation > 0.01:
+                        logger.info(f"     {horizon}: {allocation:.1%}")
 
+        except TradingBotError as e:
+            logger.error(f"Trading bot error: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Enhanced trading simulation failed: {e}")
-            # Fallback to basic bot if enhanced fails
-            logger.info("Falling back to basic trading bot...")
-            try:
-                if not hasattr(self, 'trading_bot') or self.trading_bot is None:
-                    self.trading_bot = AutoTradingBot(
-                        initial_capital=self.config.initial_capital,
-                        paper_trading=self.config.paper_trading,
-                        max_position_size=self.config.max_position_size
-                    )
-                report_date = datetime.now().date() - timedelta(days=1)
-                result = self.trading_bot.process_daily_report(report_date)
-                logger.info(f"Fallback trading result: {result.get('status', 'completed')}")
-            except Exception as fallback_error:
-                logger.error(f"Fallback trading also failed: {fallback_error}")
+            logger.error(f"Trading simulation failed: {e}", exc_info=True)
+            raise TradingBotError(f"Trading simulation failed: {e}") from e
 
     async def send_telegram_alert(self):
         """Send Telegram notification"""
