@@ -3,6 +3,7 @@
 import logging
 import os
 import uuid
+import json
 from datetime import datetime, date
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -11,6 +12,23 @@ from sqlalchemy.exc import IntegrityError
 # Import our modules
 from src.providers.sp500_provider import SP500Provider
 from src.data.models import Instrument, Bars1d, Base
+
+# #region agent log
+DEBUG_LOG_PATH = "/Users/tamirreznik/code/private/PatternIQ/.cursor/debug.log"
+def _debug_log(location, message, data, hypothesis_id=None):
+    try:
+        with open(DEBUG_LOG_PATH, "a") as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "message": message,
+                "data": data,
+                "timestamp": int(datetime.now().timestamp() * 1000)
+            }) + "\n")
+    except: pass
+# #endregion
 
 def setup_database():
     """Setup database connection and create tables"""
@@ -37,6 +55,14 @@ def run_data_ingestion_pipeline():
     
     provider = SP500Provider()
     db, engine = setup_database()
+    # #region agent log
+    _debug_log("pipeline.py:39", "Database setup complete", {
+        "engine_url": str(engine.url),
+        "db_session_id": id(db),
+        "engine_id": id(engine),
+        "is_sqlite": "sqlite" in str(engine.url).lower()
+    }, "A")
+    # #endregion
     
     try:
         # Step 1: Fetch S&P 500 symbols
@@ -97,27 +123,84 @@ def run_data_ingestion_pipeline():
                     )
                     db.merge(bar_record)
                 
+                # Commit after each symbol to release locks and avoid SQLite lock conflicts
+                # #region agent log
+                _debug_log("pipeline.py:127", "Committing after symbol bars", {
+                    "symbol": symbol,
+                    "bars_count": len(bars),
+                    "db_session_id": id(db),
+                    "pending_new": len(db.new) if hasattr(db, 'new') else 0,
+                    "pending_dirty": len(db.dirty) if hasattr(db, 'dirty') else 0
+                }, "A")
+                # #endregion
+                db.commit()  # Commit after each symbol to release SQLite locks
+                
                 total_bars += len(bars)
                 print(f"  ✅ Saved {len(bars)} bars for {symbol}")
         
+        # #region agent log
+        _debug_log("pipeline.py:141", "All symbols processed, about to do universe membership", {
+            "db_session_id": id(db),
+            "total_bars": total_bars,
+            "pending_new": len(db.new) if hasattr(db, 'new') else 0,
+            "pending_dirty": len(db.dirty) if hasattr(db, 'dirty') else 0
+        }, "A")
+        # #endregion
+        
         # Step 3: Add universe membership data
+        # Close db session and use engine.connect() with a fresh connection to avoid lock conflicts
         print(f"\n🌐 Step 3: Recording Universe Membership")
         print("-" * 40)
         
+        # Close the db session to release all locks before opening new connection
+        db.close()
+        
+        # #region agent log
+        _debug_log("pipeline.py:151", "db session closed, opening engine.connect()", {
+            "engine_id": id(engine),
+            "is_sqlite": "sqlite" in str(engine.url).lower()
+        }, "A")
+        # #endregion
+        
+        # Check if using SQLite or PostgreSQL
+        is_sqlite = 'sqlite' in str(engine.url).lower()
+        
         with engine.connect() as conn:
-            # Check if using SQLite or PostgreSQL
-            is_sqlite = 'sqlite' in str(engine.url).lower()
-            
             for symbol in test_symbols:
+                # #region agent log
+                _debug_log("pipeline.py:162", "About to execute INSERT for universe_membership", {
+                    "symbol": symbol,
+                    "conn_id": id(conn),
+                    "is_sqlite": is_sqlite
+                }, "A")
+                # #endregion
+                
                 if is_sqlite:
                     # SQLite: Use INSERT OR IGNORE (works with composite primary keys)
-                    conn.execute(
-                        text("""
-                        INSERT OR IGNORE INTO universe_membership (symbol, universe, effective_from, effective_to)
-                        VALUES (:symbol, :universe, :effective_from, :effective_to)
-                        """),
-                        {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
-                    )
+                    try:
+                        conn.execute(
+                            text("""
+                            INSERT OR IGNORE INTO universe_membership (symbol, universe, effective_from, effective_to)
+                            VALUES (:symbol, :universe, :effective_from, :effective_to)
+                            """),
+                            {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
+                        )
+                        # #region agent log
+                        _debug_log("pipeline.py:174", "INSERT executed successfully", {
+                            "symbol": symbol,
+                            "conn_id": id(conn)
+                        }, "A")
+                        # #endregion
+                    except Exception as e:
+                        # #region agent log
+                        _debug_log("pipeline.py:174", "INSERT failed", {
+                            "symbol": symbol,
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "conn_id": id(conn)
+                        }, "A")
+                        # #endregion
+                        raise
                 else:
                     # PostgreSQL: Use ON CONFLICT
                     conn.execute(
@@ -142,6 +225,13 @@ def run_data_ingestion_pipeline():
             'ABT': {'market_cap': 190000000000, 'ttm_eps': 4.85, 'pe': 23.1}
         }
         
+        # Use engine.connect() since db session is already closed
+        # #region agent log
+        _debug_log("pipeline.py:228", "Using engine.connect() for fundamentals_snapshot", {
+            "engine_id": id(engine)
+        }, "A")
+        # #endregion
+        
         with engine.connect() as conn:
             for symbol, data in sample_fundamentals.items():
                 if symbol in test_symbols:
@@ -156,17 +246,20 @@ def run_data_ingestion_pipeline():
         
         print(f"✅ Added fundamental data for {len([s for s in sample_fundamentals.keys() if s in test_symbols])} symbols")
 
-        # Commit all changes
-        db.commit()
-        
         # Step 5: Generate comprehensive report
         print(f"\n📋 Step 5: Pipeline Summary Report")
         print("-" * 40)
         
-        # Count records in each table
+        # Count records in each table - use engine.connect() since db session is closed
+        # #region agent log
+        _debug_log("pipeline.py:250", "Using engine.connect() for read queries", {
+            "engine_id": id(engine)
+        }, "A")
+        # #endregion
+        
+        tables_data = {}
+        
         with engine.connect() as conn:
-            tables_data = {}
-            
             result = conn.execute(text("SELECT COUNT(*) FROM instruments"))
             tables_data['instruments'] = result.fetchone()[0]
             
@@ -185,7 +278,6 @@ def run_data_ingestion_pipeline():
             
             result = conn.execute(text("SELECT symbol, t, c FROM bars_1d ORDER BY t DESC LIMIT 3"))
             sample_bars = result.fetchall()
-        
         print("📊 Database Summary:")
         for table, count in tables_data.items():
             print(f"  {table}: {count} records")
@@ -209,9 +301,17 @@ def run_data_ingestion_pipeline():
         print(f"❌ Error in full pipeline: {e}")
         import traceback
         traceback.print_exc()
-        db.rollback()
+        try:
+            if db and not db.is_closed if hasattr(db, 'is_closed') else db:
+                db.rollback()
+        except:
+            pass
     finally:
-        db.close()
+        try:
+            if db and not db.is_closed if hasattr(db, 'is_closed') else db:
+                db.close()
+        except:
+            pass
 
 if __name__ == "__main__":
     demo_full_data_ingestion()

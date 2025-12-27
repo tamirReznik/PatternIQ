@@ -7,6 +7,52 @@ import os
 import sys
 from pathlib import Path
 
+# Check if running in venv
+def check_venv():
+    """Check if running in virtual environment and provide helpful error if not"""
+    in_venv = (
+        hasattr(sys, 'real_prefix') or 
+        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    )
+    
+    # Also check if venv path is in Python executable
+    python_path = sys.executable
+    venv_indicators = ['venv', 'virtualenv', '.venv']
+    path_has_venv = any(indicator in python_path for indicator in venv_indicators)
+    
+    if not in_venv and not path_has_venv:
+        print("❌ ERROR: Virtual environment not activated!")
+        print("")
+        print("Please activate the virtual environment first:")
+        print("  source venv/bin/activate")
+        print("")
+        print("Then run:")
+        print("  python run_patterniq.py batch --telegram")
+        print("")
+        sys.exit(1)
+
+# Check venv before importing dependencies
+check_venv()
+
+# Load .env file BEFORE importing any modules that use config
+env_file = Path(__file__).parent / ".env"
+if env_file.exists():
+    with open(env_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                # Remove quotes if present
+                if value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                elif value.startswith("'") and value.endswith("'"):
+                    value = value[1:-1]
+                # Only set if not already in environment (CLI args take precedence)
+                if key not in os.environ:
+                    os.environ[key] = value
+
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 

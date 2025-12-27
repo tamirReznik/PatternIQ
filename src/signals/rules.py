@@ -52,18 +52,91 @@ class RuleBasedSignals:
 
     def check_earnings_gate(self, symbol: str, signal_date: date, window_days: int = 2) -> bool:
         """Check if symbol is within earnings window (gate condition)"""
-
+        
+        # Detect database type for SQL compatibility
+        is_sqlite = 'sqlite' in str(self.engine.url).lower()
+        
+        # #region agent log
+        import json
+        DEBUG_LOG_PATH = "/Users/tamirreznik/code/private/PatternIQ/.cursor/debug.log"
+        try:
+            with open(DEBUG_LOG_PATH, "a") as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "rules.py:57",
+                    "message": "check_earnings_gate called",
+                    "data": {
+                        "symbol": symbol,
+                        "signal_date": str(signal_date),
+                        "engine_url": str(self.engine.url),
+                        "is_sqlite": is_sqlite
+                    },
+                    "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                }) + "\n")
+        except: pass
+        # #endregion
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT COUNT(*)
-                FROM earnings
-                WHERE symbol = :symbol
-                AND ABS(EXTRACT(DAYS FROM (event_time::date - :signal_date))) <= :window_days
-            """), {
-                "symbol": symbol,
-                "signal_date": signal_date,
-                "window_days": window_days
-            })
+            if is_sqlite:
+                # SQLite: Use julianday() for date difference calculation
+                # #region agent log
+                try:
+                    with open(DEBUG_LOG_PATH, "a") as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "rules.py:62",
+                            "message": "Using SQLite syntax for earnings gate",
+                            "data": {
+                                "symbol": symbol,
+                                "using_julianday": True
+                            },
+                            "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                        }) + "\n")
+                except: pass
+                # #endregion
+                result = conn.execute(text("""
+                    SELECT COUNT(*)
+                    FROM earnings
+                    WHERE symbol = :symbol
+                    AND ABS(julianday(DATE(event_time)) - julianday(:signal_date)) <= :window_days
+                """), {
+                    "symbol": symbol,
+                    "signal_date": signal_date,
+                    "window_days": window_days
+                })
+            else:
+                # PostgreSQL: Use EXTRACT and type casting
+                # #region agent log
+                try:
+                    with open(DEBUG_LOG_PATH, "a") as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "rules.py:74",
+                            "message": "Using PostgreSQL syntax for earnings gate",
+                            "data": {
+                                "symbol": symbol,
+                                "using_extract": True
+                            },
+                            "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                        }) + "\n")
+                except: pass
+                # #endregion
+                result = conn.execute(text("""
+                    SELECT COUNT(*)
+                    FROM earnings
+                    WHERE symbol = :symbol
+                    AND ABS(EXTRACT(DAYS FROM (event_time::date - :signal_date))) <= :window_days
+                """), {
+                    "symbol": symbol,
+                    "signal_date": signal_date,
+                    "window_days": window_days
+                })
 
             earnings_count = result.fetchone()[0]
             return earnings_count == 0  # True if NO earnings within window
@@ -269,6 +342,9 @@ class RuleBasedSignals:
         signal_items = [(symbol, score) for symbol, score in signals.items() if score != 0]
         signal_items.sort(key=lambda x: x[1], reverse=True)  # Descending order
 
+        # Detect database type for SQL compatibility
+        is_sqlite = 'sqlite' in str(self.engine.url).lower()
+        
         with self.engine.connect() as conn:
             for i, (symbol, score) in enumerate(signal_items):
                 rank = i + 1
@@ -281,19 +357,39 @@ class RuleBasedSignals:
                 import json
                 explain_json = json.dumps(explain_data) if explain_data else None
 
-                conn.execute(text("""
-                    INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
-                    VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
-                    ON CONFLICT (symbol, d, signal_name) 
-                    DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
-                """), {
-                    "symbol": symbol,
-                    "date": signal_date,
-                    "signal_name": signal_name,
-                    "score": float(score),
-                    "rank": rank,
-                    "explain": explain_json
-                })
+                if is_sqlite:
+                    # SQLite: No type casting, use proper ON CONFLICT syntax
+                    conn.execute(text("""
+                        INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                        VALUES (:symbol, :date, :signal_name, :score, :rank, :explain)
+                        ON CONFLICT (symbol, d, signal_name) 
+                        DO UPDATE SET score = :score_update, rank = :rank_update, explain = :explain_update
+                    """), {
+                        "symbol": symbol,
+                        "date": signal_date,
+                        "signal_name": signal_name,
+                        "score": float(score),
+                        "rank": rank,
+                        "explain": explain_json,
+                        "score_update": float(score),
+                        "rank_update": rank,
+                        "explain_update": explain_json
+                    })
+                else:
+                    # PostgreSQL: Use jsonb type casting
+                    conn.execute(text("""
+                        INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                        VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
+                        ON CONFLICT (symbol, d, signal_name) 
+                        DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
+                    """), {
+                        "symbol": symbol,
+                        "date": signal_date,
+                        "signal_name": signal_name,
+                        "score": float(score),
+                        "rank": rank,
+                        "explain": explain_json
+                    })
 
             conn.commit()
 
@@ -417,15 +513,30 @@ def generate_signals():
                         print(f"     {symbol}: {score:+.4f}")
 
         # Show database summary
+        is_sqlite = 'sqlite' in str(signal_engine.engine.url).lower()
+        
         with signal_engine.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT signal_name, COUNT(*) as count, 
-                       AVG(score) as avg_score, STDDEV(score) as std_score
-                FROM signals_daily
-                WHERE d = :signal_date
-                GROUP BY signal_name
-                ORDER BY signal_name
-            """), {"signal_date": signal_date})
+            if is_sqlite:
+                # SQLite: Calculate stddev manually (SQLite doesn't have STDDEV function)
+                result = conn.execute(text("""
+                    SELECT signal_name, COUNT(*) as count, 
+                           AVG(score) as avg_score,
+                           SQRT(AVG(score * score) - AVG(score) * AVG(score)) as std_score
+                    FROM signals_daily
+                    WHERE d = :signal_date
+                    GROUP BY signal_name
+                    ORDER BY signal_name
+                """), {"signal_date": signal_date})
+            else:
+                # PostgreSQL: Use built-in STDDEV function
+                result = conn.execute(text("""
+                    SELECT signal_name, COUNT(*) as count, 
+                           AVG(score) as avg_score, STDDEV(score) as std_score
+                    FROM signals_daily
+                    WHERE d = :signal_date
+                    GROUP BY signal_name
+                    ORDER BY signal_name
+                """), {"signal_date": signal_date})
 
             signal_stats = result.fetchall()
 

@@ -130,6 +130,86 @@ class PatternIQConfig:
 
 def load_config() -> PatternIQConfig:
     """Load configuration from environment variables"""
+    # Load .env file if it exists (before reading env vars)
+    env_file = Path(__file__).parent.parent.parent / ".env"
+    if env_file.exists():
+        # #region agent log
+        DEBUG_LOG_PATH = "/Users/tamirreznik/code/private/PatternIQ/.cursor/debug.log"
+        try:
+            import json
+            with open(DEBUG_LOG_PATH, "a") as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "D",
+                    "location": "config.py:131",
+                    "message": "Loading .env file",
+                    "data": {
+                        "env_file_path": str(env_file),
+                        "file_exists": True
+                    },
+                    "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                }) + "\n")
+        except: pass
+        # #endregion
+        
+        # Manually parse .env file (simple implementation)
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Remove quotes if present
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    elif value.startswith("'") and value.endswith("'"):
+                        value = value[1:-1]
+                    # Only set if not already in environment (env vars take precedence)
+                    if key not in os.environ:
+                        os.environ[key] = value
+                        # #region agent log
+                        try:
+                            with open(DEBUG_LOG_PATH, "a") as f:
+                                f.write(json.dumps({
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "D",
+                                    "location": "config.py:155",
+                                    "message": "Loaded env var from .env",
+                                    "data": {
+                                        "key": key,
+                                        "value_length": len(value),
+                                        "value_preview": value[:20] + "..." if len(value) > 20 else value
+                                    },
+                                    "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                                }) + "\n")
+                        except: pass
+                        # #endregion
+    
+    # #region agent log
+    try:
+        import json
+        DEBUG_LOG_PATH = "/Users/tamirreznik/code/private/PatternIQ/.cursor/debug.log"
+        with open(DEBUG_LOG_PATH, "a") as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "D",
+                "location": "config.py:170",
+                "message": "Reading env vars for Telegram",
+                "data": {
+                    "TELEGRAM_BOT_TOKEN": "SET" if os.getenv("TELEGRAM_BOT_TOKEN") else "NOT SET",
+                    "TELEGRAM_CHAT_IDS": "SET" if os.getenv("TELEGRAM_CHAT_IDS") else "NOT SET",
+                    "SEND_TELEGRAM_ALERTS": os.getenv("SEND_TELEGRAM_ALERTS", "NOT SET")
+                },
+                "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+            }) + "\n")
+    except: pass
+    # #endregion
+    
     config = PatternIQConfig(
         # System Mode
         demo_mode=os.getenv("DEMO_MODE", "false").lower() == "true",

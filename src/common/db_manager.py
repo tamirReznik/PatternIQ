@@ -44,8 +44,50 @@ class DatabaseManager:
             sqlite_url = f"sqlite:///{self.config.sqlite_path}"
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.config.sqlite_path), exist_ok=True)
-            self._sqlite_engine = create_engine(sqlite_url)
+            # #region agent log
+            import json
+            DEBUG_LOG_PATH = "/Users/tamirreznik/code/private/PatternIQ/.cursor/debug.log"
+            try:
+                with open(DEBUG_LOG_PATH, "a") as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "db_manager.py:47",
+                        "message": "Creating SQLite engine",
+                        "data": {
+                            "sqlite_url": sqlite_url,
+                            "pool_size": "default",
+                            "pool_pre_ping": "default"
+                        },
+                        "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                    }) + "\n")
+            except: pass
+            # #endregion
+            # Configure SQLite for better concurrency handling
+            self._sqlite_engine = create_engine(
+                sqlite_url,
+                pool_pre_ping=True,
+                connect_args={"check_same_thread": False, "timeout": 20}
+            )
             logger.info(f"Created SQLite engine: {sqlite_url}")
+            # #region agent log
+            try:
+                with open(DEBUG_LOG_PATH, "a") as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "db_manager.py:47",
+                        "message": "SQLite engine created",
+                        "data": {
+                            "engine_id": id(self._sqlite_engine),
+                            "pool_size": self._sqlite_engine.pool.size() if hasattr(self._sqlite_engine.pool, 'size') else 'unknown'
+                        },
+                        "timestamp": int(__import__('datetime').datetime.now().timestamp() * 1000)
+                    }) + "\n")
+            except: pass
+            # #endregion
         return self._sqlite_engine
 
     def _get_postgres_engine(self):

@@ -267,14 +267,32 @@ def verify_feature_engineering():
             print(f"   Unique feature types: {features}")
 
             # Show sample features
-            result = conn.execute(text("""
-                SELECT symbol, feature_name, COUNT(*) as count,
-                       AVG(value) as avg_value, STDDEV(value) as std_value
-                FROM features_daily
-                GROUP BY symbol, feature_name
-                ORDER BY symbol, feature_name
-                LIMIT 10
-            """))
+            # Detect database type for SQL compatibility
+            from src.common.db_manager import db_manager
+            engine = db_manager.get_engine()
+            is_sqlite = 'sqlite' in str(engine.url).lower()
+            
+            if is_sqlite:
+                # SQLite: Calculate stddev manually
+                result = conn.execute(text("""
+                    SELECT symbol, feature_name, COUNT(*) as count,
+                           AVG(value) as avg_value,
+                           SQRT(AVG(value * value) - AVG(value) * AVG(value)) as std_value
+                    FROM features_daily
+                    GROUP BY symbol, feature_name
+                    ORDER BY symbol, feature_name
+                    LIMIT 10
+                """))
+            else:
+                # PostgreSQL: Use built-in STDDEV function
+                result = conn.execute(text("""
+                    SELECT symbol, feature_name, COUNT(*) as count,
+                           AVG(value) as avg_value, STDDEV(value) as std_value
+                    FROM features_daily
+                    GROUP BY symbol, feature_name
+                    ORDER BY symbol, feature_name
+                    LIMIT 10
+                """))
 
             feature_stats = result.fetchall()
 

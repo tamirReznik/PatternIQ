@@ -39,18 +39,34 @@ class BacktestSimulator:
     def get_price_data(self, symbols: List[str], start_date: date, end_date: date) -> pd.DataFrame:
         """Get adjusted price data for backtesting"""
 
+        is_sqlite = 'sqlite' in str(self.engine.url).lower()
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT symbol, t::date as date, adj_c as price
-                FROM bars_1d
-                WHERE symbol = ANY(:symbols)
-                AND t::date BETWEEN :start_date AND :end_date
-                ORDER BY symbol, t
-            """), {
-                "symbols": symbols,
-                "start_date": start_date,
-                "end_date": end_date
-            })
+            if is_sqlite:
+                # SQLite: Use DATE() function and IN clause
+                placeholders = ','.join(['?' for _ in symbols])
+                query = f"""
+                    SELECT symbol, DATE(t) as date, adj_c as price
+                    FROM bars_1d
+                    WHERE symbol IN ({placeholders})
+                    AND DATE(t) BETWEEN ? AND ?
+                    ORDER BY symbol, t
+                """
+                params = symbols + [start_date, end_date]
+                result = conn.execute(text(query), params)
+            else:
+                # PostgreSQL: Use ::date casting and ANY
+                result = conn.execute(text("""
+                    SELECT symbol, t::date as date, adj_c as price
+                    FROM bars_1d
+                    WHERE symbol = ANY(:symbols)
+                    AND t::date BETWEEN :start_date AND :end_date
+                    ORDER BY symbol, t
+                """), {
+                    "symbols": symbols,
+                    "start_date": start_date,
+                    "end_date": end_date
+                })
 
             data = result.fetchall()
 
@@ -72,16 +88,33 @@ class BacktestSimulator:
                        start_date: date, end_date: date) -> pd.DataFrame:
         """Get signal data for backtesting"""
 
+        is_sqlite = 'sqlite' in str(self.engine.url).lower()
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT symbol, d as date, score
-                FROM signals_daily
-                WHERE signal_name = :signal_name
-                AND symbol = ANY(:symbols)
-                AND d BETWEEN :start_date AND :end_date
-                ORDER BY symbol, d
-            """), {
-                "signal_name": signal_name,
+            if is_sqlite:
+                # SQLite: Use IN clause
+                placeholders = ','.join(['?' for _ in symbols])
+                query = f"""
+                    SELECT symbol, d as date, score
+                    FROM signals_daily
+                    WHERE signal_name = ?
+                    AND symbol IN ({placeholders})
+                    AND d BETWEEN ? AND ?
+                    ORDER BY symbol, d
+                """
+                params = [signal_name] + symbols + [start_date, end_date]
+                result = conn.execute(text(query), params)
+            else:
+                # PostgreSQL: Use ANY with array
+                result = conn.execute(text("""
+                    SELECT symbol, d as date, score
+                    FROM signals_daily
+                    WHERE signal_name = :signal_name
+                    AND symbol = ANY(:symbols)
+                    AND d BETWEEN :start_date AND :end_date
+                    ORDER BY symbol, d
+                """), {
+                    "signal_name": signal_name,
                 "symbols": symbols,
                 "start_date": start_date,
                 "end_date": end_date

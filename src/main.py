@@ -3,12 +3,18 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 
-import uvicorn
-
-from src.api.server import app
+# Optional imports - only needed for API server
+try:
+    import uvicorn
+    from src.api.server import app
+    API_AVAILABLE = True
+except ImportError:
+    uvicorn = None
+    app = None
+    API_AVAILABLE = False
 try:
     from src.core.config import config
 except ImportError:
@@ -32,7 +38,10 @@ class PatternIQOrchestrator:
     """Main orchestrator for PatternIQ system"""
 
     def __init__(self):
-        self.config = config
+        # Reload config to pick up any environment variable changes
+        # This ensures config reflects env vars set after module import
+        from src.core.config import load_config
+        self.config = load_config()
         self.trading_bot = None
         self.api_server = None
 
@@ -224,6 +233,11 @@ class PatternIQOrchestrator:
 
     async def start_api_server(self):
         """Start the API server"""
+        if not API_AVAILABLE:
+            logger.error("❌ API server not available: uvicorn or FastAPI not installed")
+            logger.error("   Install with: pip install uvicorn fastapi")
+            raise ImportError("uvicorn and FastAPI are required for API server mode")
+        
         try:
             logger.info(f"🌐 Starting API server on {self.config.api_host}:{self.config.api_port}")
             config_api = uvicorn.Config(

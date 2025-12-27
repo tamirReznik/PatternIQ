@@ -27,19 +27,35 @@ class SignalBlender:
                                 horizon_days: int = 5) -> pd.DataFrame:
         """Calculate forward returns for IC calculation"""
 
+        is_sqlite = 'sqlite' in str(self.engine.url).lower()
+        
         with self.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT symbol, t, adj_c, 
-                       LEAD(adj_c, :horizon) OVER (PARTITION BY symbol ORDER BY t) as future_price
-                FROM bars_1d
-                WHERE symbol = ANY(:symbols)
-                AND t BETWEEN :start_date AND :end_date
-            """), {
-                'symbols': symbols,
-                'start_date': start_date,
-                'end_date': end_date,
-                'horizon': horizon_days
-            })
+            if is_sqlite:
+                # SQLite: Use IN clause with tuple
+                placeholders = ','.join(['?' for _ in symbols])
+                query = f"""
+                    SELECT symbol, t, adj_c, 
+                           LEAD(adj_c, ?) OVER (PARTITION BY symbol ORDER BY t) as future_price
+                    FROM bars_1d
+                    WHERE symbol IN ({placeholders})
+                    AND t BETWEEN ? AND ?
+                """
+                params = [horizon_days] + symbols + [start_date, end_date]
+                result = conn.execute(text(query), params)
+            else:
+                # PostgreSQL: Use ANY with array
+                result = conn.execute(text("""
+                    SELECT symbol, t, adj_c, 
+                           LEAD(adj_c, :horizon) OVER (PARTITION BY symbol ORDER BY t) as future_price
+                    FROM bars_1d
+                    WHERE symbol = ANY(:symbols)
+                    AND t BETWEEN :start_date AND :end_date
+                """), {
+                    'symbols': symbols,
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'horizon': horizon_days
+                })
 
             df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
@@ -172,19 +188,37 @@ def blend_signals_ic_weighted(date_str: str = None):
             lookback_start = eval_date - timedelta(days=180)  # Extra buffer for forward returns
             
             # Get signals for IC calculation period
+            is_sqlite = 'sqlite' in str(blender.engine.url).lower()
+            symbols_limited = symbols[:100]  # Limit for performance
+            
             with blender.engine.connect() as conn:
-                result = conn.execute(text("""
-                    SELECT symbol, d, signal_name, score
-                    FROM signals_daily
-                    WHERE d >= :start_date AND d <= :eval_date
-                    AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
-                    AND symbol = ANY(:symbols)
-                    ORDER BY d, symbol
-                """), {
-                    "start_date": lookback_start,
-                    "eval_date": eval_date,
-                    "symbols": symbols[:100]  # Limit for performance
-                })
+                if is_sqlite:
+                    # SQLite: Use IN clause with tuple
+                    placeholders = ','.join(['?' for _ in symbols_limited])
+                    query = f"""
+                        SELECT symbol, d, signal_name, score
+                        FROM signals_daily
+                        WHERE d >= ? AND d <= ?
+                        AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
+                        AND symbol IN ({placeholders})
+                        ORDER BY d, symbol
+                    """
+                    params = [lookback_start, eval_date] + symbols_limited
+                    result = conn.execute(text(query), params)
+                else:
+                    # PostgreSQL: Use ANY with array
+                    result = conn.execute(text("""
+                        SELECT symbol, d, signal_name, score
+                        FROM signals_daily
+                        WHERE d >= :start_date AND d <= :eval_date
+                        AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
+                        AND symbol = ANY(:symbols)
+                        ORDER BY d, symbol
+                    """), {
+                        "start_date": lookback_start,
+                        "eval_date": eval_date,
+                        "symbols": symbols_limited
+                    })
                 
                 signal_data = result.fetchall()
             
@@ -285,6 +319,9 @@ def blend_signals_ic_weighted(date_str: str = None):
         signal_items = [(symbol, data["score"]) for symbol, data in combined_signals.items()]
         signal_items.sort(key=lambda x: x[1], reverse=True)
         
+        # Detect database type for SQL compatibility
+        is_sqlite = 'sqlite' in str(blender.engine.url).lower()
+        
         with blender.engine.connect() as conn:
             for i, (symbol, combined_score) in enumerate(signal_items):
                 rank = i + 1
@@ -299,19 +336,39 @@ def blend_signals_ic_weighted(date_str: str = None):
                 explain["ic_weights"] = weights
                 explain_json = json.dumps(explain)
                 
-                conn.execute(text("""
-                    INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
-                    VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
-                    ON CONFLICT (symbol, d, signal_name) 
-                    DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
-                """), {
-                    "symbol": symbol,
-                    "date": eval_date,
-                    "signal_name": "combined_ic_weighted",
-                    "score": float(combined_score),
-                    "rank": rank,
-                    "explain": explain_json
-                })
+                if is_sqlite:
+                    # SQLite: No type casting, use proper ON CONFLICT syntax
+                    conn.execute(text("""
+                        INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                        VALUES (:symbol, :date, :signal_name, :score, :rank, :explain)
+                        ON CONFLICT (symbol, d, signal_name) 
+                        DO UPDATE SET score = :score_update, rank = :rank_update, explain = :explain_update
+                    """), {
+                        "symbol": symbol,
+                        "date": eval_date,
+                        "signal_name": "combined_ic_weighted",
+                        "score": float(combined_score),
+                        "rank": rank,
+                        "explain": explain_json,
+                        "score_update": float(combined_score),
+                        "rank_update": rank,
+                        "explain_update": explain_json
+                    })
+                else:
+                    # PostgreSQL: Use jsonb type casting
+                    conn.execute(text("""
+                        INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                        VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
+                        ON CONFLICT (symbol, d, signal_name) 
+                        DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
+                    """), {
+                        "symbol": symbol,
+                        "date": eval_date,
+                        "signal_name": "combined_ic_weighted",
+                        "score": float(combined_score),
+                        "rank": rank,
+                        "explain": explain_json
+                    })
             
             conn.commit()
         
