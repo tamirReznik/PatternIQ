@@ -101,6 +101,19 @@ class MacOSBatchRunner:
             return True
         except Exception as e:
             logger.error(f"Pipeline execution failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Send error notification if possible
+            try:
+                from src.telegram.bot import PatternIQBot
+                bot = PatternIQBot()
+                if bot.bot and bot.chat_ids:
+                    await bot.send_alert(
+                        f"PatternIQ daily run failed: {str(e)}",
+                        priority="high"
+                    )
+            except Exception as telegram_error:
+                logger.warning(f"Could not send error notification: {telegram_error}")
             return False
 
     def generate_static_dashboard(self):

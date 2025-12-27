@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import uvicorn
@@ -99,8 +99,9 @@ class PatternIQOrchestrator:
                 logger.info(f"   Effective Capital (1.2x leverage): ${self.trading_bot.effective_capital:,.0f}")
                 logger.info("   Asset Classes: Stocks + Sector ETFs + Crypto ETFs + International")
 
-            # Process today's signals with enhanced logic
-            result = self.trading_bot.process_enhanced_daily_report(datetime.now().date())
+            # Process yesterday's report (reports are generated for previous trading day)
+            report_date = datetime.now().date() - timedelta(days=1)
+            result = self.trading_bot.process_enhanced_daily_report(report_date)
             logger.info(f"Enhanced trading result: {result.get('status', 'completed')}")
 
             if result.get('status') == 'completed':
@@ -143,7 +144,8 @@ class PatternIQOrchestrator:
                         paper_trading=self.config.paper_trading,
                         max_position_size=self.config.max_position_size
                     )
-                result = self.trading_bot.process_daily_report(datetime.now().date())
+                report_date = datetime.now().date() - timedelta(days=1)
+                result = self.trading_bot.process_daily_report(report_date)
                 logger.info(f"Fallback trading result: {result.get('status', 'completed')}")
             except Exception as fallback_error:
                 logger.error(f"Fallback trading also failed: {fallback_error}")
@@ -154,18 +156,31 @@ class PatternIQOrchestrator:
             from src.telegram.bot import PatternIQBot
             bot = PatternIQBot()
 
-            # Get latest report data for notification
+            # Use yesterday's date for the report (reports are generated for previous trading day)
+            report_date = datetime.now().date() - timedelta(days=1)
+            
+            # Verify report exists before sending
             reports_dir = Path("reports")
-            latest_json = sorted(reports_dir.glob("*.json"))[-1] if reports_dir.glob("*.json") else None
-
-            if latest_json:
-                await bot.send_daily_report(latest_json)
+            report_file = reports_dir / f"patterniq_report_{report_date.strftime('%Y%m%d')}.json"
+            
+            if report_file.exists():
+                await bot.send_daily_report(report_date)
                 logger.info("Telegram alert sent successfully")
             else:
-                logger.warning("No report found for Telegram alert")
+                logger.warning(f"No report found for date {report_date} - Telegram alert skipped")
+                # Try to find latest available report
+                latest_json = sorted(reports_dir.glob("patterniq_report_*.json"))[-1] if list(reports_dir.glob("patterniq_report_*.json")) else None
+                if latest_json:
+                    # Extract date from filename
+                    date_str = latest_json.stem.replace("patterniq_report_", "")
+                    report_date = datetime.strptime(date_str, "%Y%m%d").date()
+                    await bot.send_daily_report(report_date)
+                    logger.info(f"Sent latest available report from {report_date}")
 
         except Exception as e:
             logger.error(f"Telegram alert failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     async def start_api_server(self):
         """Start the API server"""

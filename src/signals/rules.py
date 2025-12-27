@@ -256,7 +256,8 @@ class RuleBasedSignals:
         self.logger.info(f"Generated gap breakaway signals for {len(signals)} symbols")
         return signals
 
-    def save_signals_to_db(self, signals: Dict[str, float], signal_name: str, signal_date: date):
+    def save_signals_to_db(self, signals: Dict[str, float], signal_name: str, signal_date: date, 
+                          time_horizons: Optional[Dict[str, str]] = None):
         """Save calculated signals to signals_daily table"""
 
         if not signals:
@@ -271,18 +272,27 @@ class RuleBasedSignals:
         with self.engine.connect() as conn:
             for i, (symbol, score) in enumerate(signal_items):
                 rank = i + 1
+                
+                # Build explain JSON with time horizon if available
+                explain_data = {}
+                if time_horizons and symbol in time_horizons:
+                    explain_data["time_horizon"] = time_horizons[symbol]
+                
+                import json
+                explain_json = json.dumps(explain_data) if explain_data else None
 
                 conn.execute(text("""
-                    INSERT INTO signals_daily (symbol, d, signal_name, score, rank)
-                    VALUES (:symbol, :date, :signal_name, :score, :rank)
+                    INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                    VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
                     ON CONFLICT (symbol, d, signal_name) 
-                    DO UPDATE SET score = :score, rank = :rank
+                    DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
                 """), {
                     "symbol": symbol,
                     "date": signal_date,
                     "signal_name": signal_name,
                     "score": float(score),
-                    "rank": rank
+                    "rank": rank,
+                    "explain": explain_json
                 })
 
             conn.commit()
@@ -299,10 +309,46 @@ class RuleBasedSignals:
         meanrev_signals = self.meanrev_bollinger_signal(symbols, signal_date)
         gap_signals = self.gap_breakaway_signal(symbols, signal_date)
 
-        # Save to database
-        self.save_signals_to_db(momentum_signals, "momentum_20_120", signal_date)
-        self.save_signals_to_db(meanrev_signals, "meanrev_bollinger", signal_date)
-        self.save_signals_to_db(gap_signals, "gap_breakaway", signal_date)
+        # Classify signals by time horizon
+        try:
+            from src.signals.strategies import TimeHorizonStrategy
+            strategy = TimeHorizonStrategy()
+            
+            # Get features for classification
+            features_map = {}
+            for symbol in symbols:
+                features = self.get_features_for_signal(
+                    symbol, signal_date,
+                    ['momentum_ret_20', 'momentum_ret_120', 'momentum_vol_20d']
+                )
+                if features:
+                    features_map[symbol] = features
+            
+            # Classify each signal type
+            momentum_horizons = {}
+            for symbol, score in momentum_signals.items():
+                features = features_map.get(symbol)
+                horizon = strategy.classify_signal("momentum_20_120", score, symbol, features)
+                momentum_horizons[symbol] = horizon.value
+            
+            meanrev_horizons = {}
+            for symbol, score in meanrev_signals.items():
+                horizon = strategy.classify_signal("meanrev_bollinger", score, symbol, None)
+                meanrev_horizons[symbol] = horizon.value
+            
+            gap_horizons = {}
+            for symbol, score in gap_signals.items():
+                horizon = strategy.classify_signal("gap_breakaway", score, symbol, None)
+                gap_horizons[symbol] = horizon.value
+            
+        except Exception as e:
+            self.logger.warning(f"Could not classify time horizons: {e}")
+            momentum_horizons = meanrev_horizons = gap_horizons = None
+
+        # Save to database with time horizons
+        self.save_signals_to_db(momentum_signals, "momentum_20_120", signal_date, momentum_horizons)
+        self.save_signals_to_db(meanrev_signals, "meanrev_bollinger", signal_date, meanrev_horizons)
+        self.save_signals_to_db(gap_signals, "gap_breakaway", signal_date, gap_horizons)
 
         return {
             "momentum_20_120": momentum_signals,

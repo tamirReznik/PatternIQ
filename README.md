@@ -71,6 +71,132 @@ Based on backtesting with sophisticated risk management:
 
 ---
 
+## 🌍 Multi-Asset Trading Capabilities
+
+### **Expanded Universe: Stocks + Indexes + Crypto**
+
+PatternIQ now supports trading across multiple asset classes to enhance diversification and returns:
+
+#### **Available Asset Classes**
+
+**📈 Market Indexes (ETFs)**
+- **SPY** - S&P 500 ETF (broad market exposure)
+- **QQQ** - NASDAQ-100 ETF (technology focus)
+- **DIA** - Dow Jones ETF (blue chip stocks)
+- **IWM** - Russell 2000 ETF (small cap exposure)
+- **VTI** - Total Stock Market ETF (complete market)
+- **EFA** - International Developed Markets
+
+**₿ Cryptocurrencies** (24/7 Trading)
+- **BTC-USD** - Bitcoin (crypto blue chip)
+- **ETH-USD** - Ethereum (smart contracts)
+- **SOL-USD** - Solana (high performance)
+- **ADA-USD** - Cardano (proof of stake)
+- **BNB-USD** - Binance Coin (exchange token)
+- **XRP-USD** - Ripple (payments)
+- **MATIC-USD** - Polygon (scaling solution)
+
+#### **Smart Position Limits by Asset Class**
+
+**Stocks (S&P 500)**
+- Max per position: **5%**
+- Max total allocation: **70%**
+- Stop loss: **15%** | Take profit: **30%**
+- Signal threshold: **0.6** (strong signals only)
+
+**Indexes/ETFs**
+- Max per position: **15%** (less risky, more concentrated OK)
+- Max total allocation: **40%**
+- Stop loss: **10%** | Take profit: **20%**
+- Signal threshold: **0.6**
+
+**Cryptocurrencies**
+- Max per position: **3%** (high volatility protection)
+- Max total allocation: **15%** (limit overall crypto risk)
+- Stop loss: **20%** | Take profit: **50%**
+- Signal threshold: **0.7** (only very strong signals)
+
+#### **Why Multi-Asset Trading?**
+
+**Enhanced Diversification**
+- Reduce correlation risk by spreading across asset classes
+- Crypto often moves independently of stocks
+- Indexes provide stable core holdings
+
+**24/7 Opportunities**
+- Crypto markets never close
+- Capture opportunities while stock markets are closed
+- React to global events in real-time
+
+**Optimized Risk-Return**
+- Higher risk assets (crypto) limited to small allocations
+- Stable assets (indexes) can have larger positions
+- Overall portfolio risk managed holistically
+
+**Better Performance Potential**
+- Crypto can deliver 50-100%+ returns in bull markets
+- Indexes provide steady 8-12% baseline returns
+- Stocks offer 10-15% with active selection
+
+#### **Using Multi-Asset Bot**
+
+```python
+from src.trading.multi_asset_bot import MultiAssetTradingBot
+
+# Initialize with all asset classes
+bot = MultiAssetTradingBot(
+    initial_capital=100000.0,
+    paper_trading=True,
+    enable_crypto=True,      # Enable cryptocurrency trading
+    enable_indexes=True      # Enable index/ETF trading
+)
+
+# Bot automatically manages allocation across asset classes
+status = bot.get_portfolio_status()
+
+print(f"Allocation by asset class:")
+for asset_class, allocation in status['allocation_by_class'].items():
+    print(f"  {asset_class}: {allocation:.1%}")
+
+# Example output:
+#   stocks: 45.0%
+#   indexes: 35.0%
+#   crypto: 12.0%
+#   cash: 8.0%
+```
+
+#### **Risk Management Across Asset Classes**
+
+The multi-asset bot implements sophisticated risk controls:
+
+1. **Class-Level Limits**: Each asset class has maximum allocation
+2. **Position-Level Limits**: Individual positions sized appropriately
+3. **Dynamic Stop Losses**: Wider stops for volatile assets (crypto)
+4. **Higher Signal Thresholds**: Crypto requires stronger signals (0.7 vs 0.6)
+5. **Fee Awareness**: Accounts for exchange fees on crypto trades
+6. **Market Hours**: Respects market hours for stocks/indexes, trades crypto 24/7
+
+#### **Expected Performance with Multi-Asset**
+
+**Conservative Mix** (60% stocks, 30% indexes, 10% crypto)
+- Expected annual return: **12-18%**
+- Risk level: **Medium**
+- Best for: Steady growth with some upside
+
+**Balanced Mix** (50% stocks, 25% indexes, 25% crypto)
+- Expected annual return: **15-25%**
+- Risk level: **Medium-High**
+- Best for: Growth-focused investors
+
+**Aggressive Mix** (40% stocks, 20% indexes, 40% crypto)
+- Expected annual return: **20-40%** (or larger losses)
+- Risk level: **High**
+- Best for: Risk-tolerant investors seeking maximum returns
+
+**Note**: Cryptocurrency is highly volatile and can experience 50%+ drawdowns. Only allocate what you can afford to lose.
+
+---
+
 ## 📊 Daily System Output
 
 Every trading day (by 8:00 AM ET), PatternIQ generates:
