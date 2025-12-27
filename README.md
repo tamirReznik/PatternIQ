@@ -1,19 +1,21 @@
 # PatternIQ
 
-**Advanced Quantitative Trading System for S&P 500 Alpha Generation**
+**Passive Income Generation Through Intelligent Stock & Crypto Trading**
 
-PatternIQ is a sophisticated algorithmic trading system that identifies market inefficiencies in S&P 500 stocks and generates actionable trading signals. The system processes real-time market data, calculates proprietary technical indicators, and produces daily portfolio recommendations backed by rigorous backtesting.
+PatternIQ is a sophisticated algorithmic trading system designed to generate passive income by identifying high-probability trading opportunities across stocks, ETFs, and cryptocurrencies. The system processes market data, calculates proprietary technical indicators, and produces daily portfolio recommendations organized by investment time horizon (short/mid/long-term) backed by rigorous backtesting.
 
 ---
 
 ## 🎯 What PatternIQ Does for You
 
-**PatternIQ delivers daily trading intelligence that helps you:**
-- **Identify High-Probability Trades**: Spots stocks with strong momentum or mean-reversion patterns
-- **Optimize Portfolio Construction**: Provides specific position sizes and risk-adjusted recommendations
+**PatternIQ delivers daily trading intelligence to help you generate passive income:**
+- **Identify High-Probability Trades**: Spots stocks/crypto with strong momentum or mean-reversion patterns
+- **Time Horizon Strategies**: Separates recommendations into short-term (days-weeks), mid-term (weeks-months), and long-term (months-years) strategies
+- **Optimize Portfolio Construction**: Provides specific position sizes and risk-adjusted recommendations for each time horizon
 - **Minimize Risk**: Built-in safeguards to avoid earnings announcements and high-volatility periods
 - **Track Performance**: Comprehensive analytics to measure strategy effectiveness over time
-- **Automate Delivery**: Professional reports via API, email, and Telegram notifications
+- **Historical Validation**: Backtest algorithms across different market conditions to verify performance
+- **Automate Delivery**: Professional reports via API and Telegram notifications
 - **Monitor Portfolio**: Real-time tracking of portfolio performance vs initial investment
 
 ---
@@ -26,23 +28,30 @@ PatternIQ includes sophisticated performance simulation tools to help you unders
 
 Test how the enhanced trading bot would have performed over any historical period:
 
-#### Quick Performance Check (1 Year)
+#### Unified Backtest Runner (Recommended)
 ```bash
-# Simulate bot performance from 1 year ago to today
-python quick_simulation.py
+# Quick 1-year backtest
+python scripts/simulations/run_backtest.py --period 1y
+
+# Test specific strategy (short/mid/long-term)
+python scripts/simulations/run_backtest.py --strategy short --period 6m
+python scripts/simulations/run_backtest.py --strategy mid --period 1y
+python scripts/simulations/run_backtest.py --strategy long --period 2y
+
+# Compare all strategies
+python scripts/simulations/run_backtest.py --strategy all --period 1y
+
+# Custom date range with specific capital
+python scripts/simulations/run_backtest.py --start 2024-01-01 --end 2024-12-31 --capital 50000
 ```
-**Example Output:** Bot would have made $10,485 (+10.5% return) with 66.7% win rate
 
-#### Flexible Date Range Testing
+#### Legacy Simulation Scripts (Still Available)
 ```bash
-# Test any custom period with any starting capital
+# Quick 1-year simulation (scenario-based)
+python quick_simulation.py
+
+# Flexible date range (scenario-based)
 python flexible_simulation.py 2024-01-01 --end_date 2024-12-31 --capital 50000
-
-# Test 6 months with $25K
-python flexible_simulation.py 2024-06-01 --end_date 2024-12-01 --capital 25000
-
-# Test from specific date to today
-python flexible_simulation.py 2023-01-01
 ```
 
 #### Simulation Features
@@ -401,6 +410,36 @@ print(f"Total return: {status['total_return']:.2%}")
 - **What it is**: The final recommendation combining all individual signals
 - **How it's calculated**: Automatically weights each signal based on recent performance (Information Coefficient)
 - **Key insight**: This is your primary trading signal - the system's best guess
+
+### **Time Horizon Strategies** (NEW)
+
+PatternIQ now classifies all signals by investment time horizon to help you build a diversified passive income portfolio:
+
+#### **Short-Term Strategy** (Days to Weeks)
+- **Focus**: Momentum signals, gap breakaways, quick reversals
+- **Holding Period**: 1-14 days typically
+- **Risk Level**: High volatility, higher frequency trading
+- **Stop Loss**: 10% | Take Profit: 15%
+- **Best For**: Active traders seeking quick gains
+
+#### **Mid-Term Strategy** (Weeks to Months)
+- **Focus**: Balanced momentum and mean reversion
+- **Holding Period**: 14-90 days typically
+- **Risk Level**: Medium volatility, moderate frequency
+- **Stop Loss**: 15% | Take Profit: 25%
+- **Best For**: Balanced approach to passive income
+
+#### **Long-Term Strategy** (Months to Years)
+- **Focus**: Trend following, fundamental strength
+- **Holding Period**: 90-365+ days typically
+- **Risk Level**: Lower volatility, lower frequency
+- **Stop Loss**: 20% | Take Profit: 40%
+- **Best For**: Long-term wealth building and passive income
+
+**Reports now show separate sections for each time horizon**, allowing you to:
+- Build a diversified portfolio across time horizons
+- Match strategies to your risk tolerance and time availability
+- Optimize for different passive income goals
 
 ---
 

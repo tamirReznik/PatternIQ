@@ -124,6 +124,7 @@ def blend_signals_ic_weighted(date_str: str = None):
     3. Weight signals by their IC
     4. Combine into a single score
     5. Rank and normalize to create final signal
+    6. Save combined signal to database
 
     Args:
         date_str: Optional date string in YYYY-MM-DD format. If not provided,
@@ -144,24 +145,211 @@ def blend_signals_ic_weighted(date_str: str = None):
 
     logger.info(f"🔀 Blending signals using IC weighting for date: {eval_date}")
 
-    # Demo blending for testing
-    logger.info("✅ Successfully blended signals with IC weighting")
-    logger.info("📊 Signal quality metrics:")
-    logger.info("   - Momentum IC: 0.07")
-    logger.info("   - Mean Reversion IC: 0.05")
-    logger.info("   - Gap IC: 0.03")
-    logger.info("   - Combined IC: 0.09")
+    blender = SignalBlender()
+    
+    try:
+        # Get symbols that have signals for this date
+        with blender.engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT DISTINCT symbol
+                FROM signals_daily
+                WHERE d = :eval_date
+                AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
+            """), {"eval_date": eval_date})
+            
+            symbols = [row[0] for row in result.fetchall()]
+        
+        if not symbols:
+            logger.warning(f"No signals found for date {eval_date}, using equal weights")
+            # Fallback to equal weights if no historical data
+            weights = {
+                "momentum_20_120": 0.4,
+                "meanrev_bollinger": 0.35,
+                "gap_breakaway": 0.25
+            }
+        else:
+            # Calculate IC using historical data (last 120 days)
+            lookback_start = eval_date - timedelta(days=180)  # Extra buffer for forward returns
+            
+            # Get signals for IC calculation period
+            with blender.engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT symbol, d, signal_name, score
+                    FROM signals_daily
+                    WHERE d >= :start_date AND d <= :eval_date
+                    AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
+                    AND symbol = ANY(:symbols)
+                    ORDER BY d, symbol
+                """), {
+                    "start_date": lookback_start,
+                    "eval_date": eval_date,
+                    "symbols": symbols[:100]  # Limit for performance
+                })
+                
+                signal_data = result.fetchall()
+            
+            if len(signal_data) < 50:  # Not enough data for IC calculation
+                logger.warning("Insufficient historical data for IC calculation, using equal weights")
+                weights = {
+                    "momentum_20_120": 0.4,
+                    "meanrev_bollinger": 0.35,
+                    "gap_breakaway": 0.25
+                }
+            else:
+                # Convert to DataFrame
+                signals_df = pd.DataFrame(signal_data, columns=['symbol', 'd', 'signal_name', 'score'])
+                signals_pivot = signals_df.pivot_table(
+                    index=['symbol', 'd'],
+                    columns='signal_name',
+                    values='score',
+                    aggfunc='first'
+                ).reset_index()
+                
+                # Calculate forward returns
+                unique_symbols = signals_pivot['symbol'].unique().tolist()
+                returns_df = blender.calculate_forward_returns(
+                    unique_symbols,
+                    lookback_start,
+                    eval_date,
+                    horizon_days=5
+                )
+                
+                if returns_df.empty or len(returns_df) < 20:
+                    logger.warning("Insufficient return data for IC calculation, using equal weights")
+                    weights = {
+                        "momentum_20_120": 0.4,
+                        "meanrev_bollinger": 0.35,
+                        "gap_breakaway": 0.25
+                    }
+                else:
+                    # Calculate IC
+                    ic_df = blender.calculate_ic(signals_pivot, returns_df, window_days=120)
+                    
+                    if ic_df.empty:
+                        logger.warning("IC calculation returned empty, using equal weights")
+                        weights = {
+                            "momentum_20_120": 0.4,
+                            "meanrev_bollinger": 0.35,
+                            "gap_breakaway": 0.25
+                        }
+                    else:
+                        # Get weights from IC
+                        weights_dict = blender.weight_signals(ic_df, min_ic=0.0)
+                        
+                        # Map to our signal names
+                        weights = {
+                            "momentum_20_120": weights_dict.get("signal_momentum_20_120", 0.4),
+                            "meanrev_bollinger": weights_dict.get("signal_meanrev_bollinger", 0.35),
+                            "gap_breakaway": weights_dict.get("signal_gap_breakaway", 0.25)
+                        }
+                        
+                        # Normalize to sum to 1
+                        total = sum(weights.values())
+                        if total > 0:
+                            weights = {k: v/total for k, v in weights.items()}
+        
+        # Get signals for the evaluation date
+        with blender.engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT symbol, signal_name, score, explain
+                FROM signals_daily
+                WHERE d = :eval_date
+                AND signal_name IN ('momentum_20_120', 'meanrev_bollinger', 'gap_breakaway')
+            """), {"eval_date": eval_date})
+            
+            signal_data = result.fetchall()
+        
+        # Combine signals using weights
+        combined_signals = {}
+        signal_dict = {}
+        
+        for symbol, signal_name, score, explain_json in signal_data:
+            if symbol not in signal_dict:
+                signal_dict[symbol] = {}
+            signal_dict[symbol][signal_name] = float(score)
+            if symbol not in combined_signals:
+                combined_signals[symbol] = {
+                    "score": 0.0,
+                    "explain": explain_json
+                }
+        
+        # Calculate weighted combined score
+        for symbol, signals in signal_dict.items():
+            combined_score = 0.0
+            for signal_name, score in signals.items():
+                weight = weights.get(signal_name, 0.0)
+                combined_score += score * weight
+            combined_signals[symbol]["score"] = combined_score
+        
+        # Save combined signal to database
+        signal_items = [(symbol, data["score"]) for symbol, data in combined_signals.items()]
+        signal_items.sort(key=lambda x: x[1], reverse=True)
+        
+        with blender.engine.connect() as conn:
+            for i, (symbol, combined_score) in enumerate(signal_items):
+                rank = i + 1
+                explain_json = combined_signals[symbol]["explain"]
+                
+                # Add IC weights to explain
+                import json
+                try:
+                    explain = json.loads(explain_json) if explain_json else {}
+                except:
+                    explain = {}
+                explain["ic_weights"] = weights
+                explain_json = json.dumps(explain)
+                
+                conn.execute(text("""
+                    INSERT INTO signals_daily (symbol, d, signal_name, score, rank, explain)
+                    VALUES (:symbol, :date, :signal_name, :score, :rank, :explain::jsonb)
+                    ON CONFLICT (symbol, d, signal_name) 
+                    DO UPDATE SET score = :score, rank = :rank, explain = :explain::jsonb
+                """), {
+                    "symbol": symbol,
+                    "date": eval_date,
+                    "signal_name": "combined_ic_weighted",
+                    "score": float(combined_score),
+                    "rank": rank,
+                    "explain": explain_json
+                })
+            
+            conn.commit()
+        
+        logger.info("✅ Successfully blended signals with IC weighting")
+        logger.info(f"📊 Signal weights:")
+        for signal_name, weight in weights.items():
+            logger.info(f"   - {signal_name}: {weight:.3f}")
+        logger.info(f"📈 Combined signals saved: {len(combined_signals)} symbols")
 
-    return {
-        "date": eval_date.strftime("%Y-%m-%d"),
-        "status": "success",
-        "signals_blended": 3,
-        "top_weights": {
-            "momentum": 0.6,
-            "mean_reversion": 0.3,
-            "gap": 0.1
+        return {
+            "date": eval_date.strftime("%Y-%m-%d"),
+            "status": "success",
+            "signals_blended": len(combined_signals),
+            "weights": weights,
+            "top_weights": {
+                "momentum": weights.get("momentum_20_120", 0.0),
+                "mean_reversion": weights.get("meanrev_bollinger", 0.0),
+                "gap": weights.get("gap_breakaway", 0.0)
+            }
         }
-    }
+    
+    except Exception as e:
+        logger.error(f"❌ Error blending signals: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # Fallback to equal weights
+        return {
+            "date": eval_date.strftime("%Y-%m-%d"),
+            "status": "error",
+            "error": str(e),
+            "signals_blended": 0,
+            "top_weights": {
+                "momentum": 0.4,
+                "mean_reversion": 0.35,
+                "gap": 0.25
+            }
+        }
 
 # Allow running as a script
 if __name__ == "__main__":

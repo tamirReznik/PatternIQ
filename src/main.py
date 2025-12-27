@@ -9,7 +9,11 @@ from pathlib import Path
 import uvicorn
 
 from src.api.server import app
-from src.common.config import config
+try:
+    from src.core.config import config
+except ImportError:
+    # Fallback to old location for backward compatibility
+    from src.common.config import config
 from src.common.db_manager import db_manager
 from src.data.demo_full_pipeline import demo_full_data_ingestion
 from src.features.momentum import demo_momentum_features

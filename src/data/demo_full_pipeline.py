@@ -105,15 +105,29 @@ def demo_full_data_ingestion():
         print("-" * 40)
         
         with engine.connect() as conn:
+            # Check if using SQLite or PostgreSQL
+            is_sqlite = 'sqlite' in str(engine.url).lower()
+            
             for symbol in test_symbols:
-                conn.execute(
-                    text("""
-                    INSERT INTO universe_membership (symbol, universe, effective_from, effective_to)
-                    VALUES (:symbol, :universe, :effective_from, :effective_to)
-                    ON CONFLICT (symbol, universe, effective_from) DO NOTHING
-                    """),
-                    {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
-                )
+                if is_sqlite:
+                    # SQLite: Use INSERT OR IGNORE (works with composite primary keys)
+                    conn.execute(
+                        text("""
+                        INSERT OR IGNORE INTO universe_membership (symbol, universe, effective_from, effective_to)
+                        VALUES (:symbol, :universe, :effective_from, :effective_to)
+                        """),
+                        {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
+                    )
+                else:
+                    # PostgreSQL: Use ON CONFLICT
+                    conn.execute(
+                        text("""
+                        INSERT INTO universe_membership (symbol, universe, effective_from, effective_to)
+                        VALUES (:symbol, :universe, :effective_from, :effective_to)
+                        ON CONFLICT (symbol, universe, effective_from) DO NOTHING
+                        """),
+                        {"symbol": symbol, "universe": "SP500", "effective_from": date(2024, 1, 1), "effective_to": date(2024, 12, 31)}
+                    )
             conn.commit()
         
         print(f"✅ Added {len(test_symbols)} symbols to S&P 500 universe")
